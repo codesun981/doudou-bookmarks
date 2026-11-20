@@ -3,6 +3,7 @@ import { normalizeChromeTree } from '../features/bookmarks/tree';
 import { DEMO_BOOKMARK_TREE } from './demo-data';
 import { localFavicon } from '../utils/site-icons';
 import { faviconRefreshEpoch, hasRefreshedFavicon } from './favicon-refresh';
+import { isServerMode } from './server-mode';
 
 export function isExtensionEnvironment(): boolean {
   return (
@@ -36,6 +37,13 @@ function isExtensionPage(): boolean {
 }
 
 export async function readBookmarkTree(): Promise<BookmarkNode[]> {
+  if (isServerMode()) {
+    // 豆豆书签（fork）：书签树来自 Worker 的 /api/tree（D1）。
+    const res = await fetch('/api/tree');
+    if (!res.ok) throw new Error('TREE_LOAD_FAILED');
+    const data = (await res.json()) as { tree: BookmarkNode[] };
+    return data.tree;
+  }
   if (hasBookmarkAccess()) {
     const tree = await chrome.bookmarks.getTree();
     return normalizeChromeTree(tree);
@@ -161,6 +169,21 @@ export function faviconCandidates(
         retryable: true,
       });
     }
+  } else if (isServerMode()) {
+    // 豆豆书签（fork）：图标由 Worker 代理抓取（显式 logo→apple-touch-icon→favicon→首字色块），
+    // 不依赖 Google favicon 服务（国内网络常不可达，且自建站它多半只回通用地球仪）。
+    candidates.push({
+      src: `/api/icon?url=${encodeURIComponent(url)}`,
+      local: false,
+      inspect: false,
+      retryable: false,
+    });
+    candidates.push({
+      src: `https://www.google.com/s2/favicons?domain=${encodeURIComponent(parsed.hostname)}&sz=${size}`,
+      local: false,
+      inspect: false,
+      retryable: true,
+    });
   } else {
     candidates.push({
       src: `https://www.google.com/s2/favicons?domain=${encodeURIComponent(parsed.hostname)}&sz=${size}`,

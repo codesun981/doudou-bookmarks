@@ -2,6 +2,8 @@ import type { Desktop, DesktopLayout } from '../../types/desktop';
 import { deriveBookmarkLayout } from '../bookmarks/layout';
 import { buildBookmarkCache, syncDesktopsWithTree } from '../bookmarks/sync';
 import { createDemoSeed } from '../../services/demo-data';
+import { isServerMode } from '../../services/server-mode';
+import { createServerSeed } from '../../services/server-seed';
 import type { BookmarkSnapshot } from '../../services/bookmark-service';
 import { loadBookmarkSnapshot } from '../../services/bookmark-service';
 import { hydrateFaviconRefresh } from '../../services/favicon-refresh';
@@ -141,7 +143,20 @@ export async function bootstrapWorkspace(): Promise<void> {
     console.warn('[GlassDesk] Bookmark access unavailable', error);
   }
 
-  if (desktops.length === 0 && isDemo) {
+  if (desktops.length === 0 && isServerMode() && loaded) {
+    // 豆豆书签（fork）：云端首开——桌面按书签树文件夹生成，其余部件沿用演示种子的默认值。
+    const base = createDemoSeed(Date.now(), getViewportSize());
+    desktops = createServerSeed(loaded.tree, Date.now()).desktops;
+    widgets = base.widgets;
+    notes = base.notes;
+    countdowns = base.countdowns;
+    pomodoro = base.pomodoro;
+    settings = { ...base.settings, defaultWallpaper: 'doudou' };
+    cache = { ...cache, ...buildBookmarkCache(loaded.tree) };
+    seeded = true;
+    layoutChanged = true;
+    status = 'ready';
+  } else if (desktops.length === 0 && isDemo) {
     const seed = createDemoSeed(Date.now(), getViewportSize());
     desktops = seed.desktops;
     widgets = seed.widgets;

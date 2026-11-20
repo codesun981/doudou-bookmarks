@@ -1,4 +1,5 @@
 import { createMigrationBackup } from '../utils/migration';
+import { isServerMode } from './server-mode';
 import { CORE_KEYS, STORAGE_KEYS, type RawStorage } from '../utils/storage-keys';
 
 const LOCAL_PREFIX = 'glassdesk:storage:';
@@ -65,7 +66,81 @@ function writeLocalItems(items: RawStorage): StorageChanges {
   return changes;
 }
 
+
+// 豆豆书签（fork）：云端 Backend——整份 RawStorage 存在 Worker 的 KV 里，
+// 本地只留内存缓存，写入防抖 250ms 后整份 PUT 回 /api/storage。
+function createServerBackend(): Backend {
+  let cache: RawStorage | null = null;
+  let putTimer: ReturnType<typeof setTimeout> | null = null;
+  async function ensure(): Promise<RawStorage> {
+    if (cache) return cache;
+    try {
+      const res = await fetch('/api/storage');
+      cache = res.ok ? ((await res.json()) as RawStorage) : {};
+    } catch {
+      cache = {};
+    }
+    return cache;
+  }
+  function schedulePut(): void {
+    if (putTimer) clearTimeout(putTimer);
+    putTimer = setTimeout(() => {
+      if (!cache) return;
+      void fetch('/api/storage', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cache),
+      }).catch(() => undefined);
+    }, 250);
+  }
+  return {
+    async get(keys) {
+      const all = await ensure();
+      const result: RawStorage = {};
+      for (const key of keys) {
+        if (key in all) result[key] = all[key];
+      }
+      return result;
+    },
+    async getAll() {
+      return { ...(await ensure()) };
+    },
+    async set(items) {
+      const all = await ensure();
+      const changes: StorageChanges = {};
+      for (const [key, value] of Object.entries(items)) {
+        changes[key] = { oldValue: all[key], newValue: value };
+        all[key] = value;
+      }
+      dispatchLocalChanges(changes);
+      schedulePut();
+    },
+    async remove(keys) {
+      const all = await ensure();
+      const changes: StorageChanges = {};
+      for (const key of keys) {
+        changes[key] = { oldValue: all[key], newValue: undefined };
+        delete all[key];
+      }
+      dispatchLocalChanges(changes);
+      schedulePut();
+    },
+    async bytesInUse() {
+      const all = await ensure();
+      try {
+        return new Blob([JSON.stringify(all)]).size;
+      } catch {
+        return 0;
+      }
+    },
+  };
+}
+
 function createBackend(): Backend {
+  if (isServerMode()) {
+    return createServerBackend();
+  }
+
   if (chromeStorageAvailable()) {
     return {
       async get(keys) {

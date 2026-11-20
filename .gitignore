@@ -13,3 +13,7 @@ Thumbs.db
 
 glassdesk-extension.zip
 glassdesk-extension.zip.sha256
+
+# 豆豆书签：真实部署配置不进仓（见 wrangler.toml.example）
+wrangler.toml
+.cf_token

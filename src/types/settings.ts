@@ -1,7 +1,7 @@
 export type GlassIntensity = 'low' | 'medium' | 'high';
 export type BookmarkSyncMode = 'import' | 'follow';
 export type SearchEngineId = 'bing' | 'google' | 'baidu' | 'duckduckgo';
-export type WallpaperId = 'sunrise' | 'mint' | 'dune' | 'dusk' | 'paper';
+export type WallpaperId = 'sunrise' | 'mint' | 'dune' | 'dusk' | 'paper' | 'doudou';
 export type Appearance = 'light';
 export type BookmarkColumns = 1 | 2 | 3 | 4 | 5;
 

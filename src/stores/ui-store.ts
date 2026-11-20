@@ -9,7 +9,7 @@ export interface ToastMessage {
   tone: ToastTone;
 }
 
-export type SettingsSection = 'appearance' | 'desktops' | 'search' | 'data' | 'about';
+export type SettingsSection = 'appearance' | 'desktops' | 'search' | 'data' | 'about' | 'server';
 
 interface UiState {
   searchOpen: boolean;

@@ -28,6 +28,8 @@ import { SEARCH_ENGINES } from '../../features/search/search';
 import { BOOKMARK_COLUMNS } from '../../utils/defaults';
 import { downloadBackup, importBackupFile } from '../../features/settings/backup';
 import { storageService } from '../../services/storage-service';
+import { isServerMode } from '../../services/server-mode';
+import { ServerBookmarksAdmin } from './ServerBookmarksAdmin';
 import {
   addBlankDesktop,
   addDesktopFromFolder,
@@ -57,11 +59,15 @@ const SECTIONS: Array<{ id: SettingsSection; label: string; icon: typeof Monitor
   { id: 'search', label: '搜索与快捷键', icon: MagnifyingGlass },
   { id: 'data', label: '数据与备份', icon: HardDrive },
   { id: 'about', label: '关于', icon: Info },
+  ...(isServerMode()
+    ? [{ id: 'server' as const, label: '书签管理（云端）', icon: HardDrive }]
+    : []),
 ];
 
 const SECTION_COPY: Record<SettingsSection, { title: string; description: string }> = {
   appearance: { title: '外观', description: '壁纸、书签列数、玻璃质感和细微的动效偏好。' },
   desktops: { title: '桌面与书签', description: '管理桌面、文件夹映射和书签同步。' },
+  server: { title: '书签管理（云端）', description: '书签与分类存在 Cloudflare 云端，在这里增删改，桌面会跟着同步。' },
   search: { title: '搜索与快捷键', description: '默认搜索引擎与键盘操作。' },
   data: { title: '数据与备份', description: '所有数据都保存在这台电脑上。' },
   about: { title: '关于 GlassDesk', description: '版本、权限和实现边界。' },
@@ -114,7 +120,7 @@ export function SettingsSheet() {
         <div className="settings-brand">
           <img src="/icons/icon-48.png" alt="" width={30} height={30} />
           <div>
-            <div className="settings-brand__name">GlassDesk</div>
+            <div className="settings-brand__name">豆豆书签</div>
             <div className="settings-brand__meta">v{APP_VERSION}</div>
           </div>
         </div>
@@ -163,6 +169,7 @@ export function SettingsSheet() {
           {section === 'search' ? <SearchSection /> : null}
           {section === 'data' ? <DataSection /> : null}
           {section === 'about' ? <AboutSection /> : null}
+          {section === 'server' ? <ServerBookmarksAdmin /> : null}
         </div>
       </div>
     </Modal>

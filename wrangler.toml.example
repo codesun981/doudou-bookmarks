@@ -1,0 +1,21 @@
+name = "doudou"
+main = "worker/index.js"
+compatibility_date = "2025-01-01"
+account_id = "098ed30e9d9583a03cf05ced93c999dd"
+
+[assets]
+directory = "dist"
+binding = "ASSETS"
+
+[[routes]]
+pattern = "desk.aioosi.com"
+custom_domain = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "starrealm-db"
+database_id = "c27cb181-8ad9-4908-b3a1-b599bc8b8593"
+
+[[kv_namespaces]]
+binding = "NAV_AUTH"
+id = "d160e0ff2d954ea1a132c24db07cd85b"
