@@ -51,6 +51,7 @@ export function ServerBookmarksAdmin() {
   const [form, setForm] = useState({ name: '', url: '', desc: '', catelog: '' });
   const [newCategory, setNewCategory] = useState('');
   const [editing, setEditing] = useState<SiteRow | null>(null);
+  const [confirming, setConfirming] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -166,17 +167,16 @@ export function ServerBookmarksAdmin() {
                   <span className="sv-name">{site.name}</span>
                   <span className="sv-url">{site.url}</span>
                   <button className="sv-btn ghost" onClick={() => setEditing(site)}>编辑</button>
-                  <button
-                    className="sv-btn danger"
-                    disabled={busy}
-                    onClick={() => {
-                      if (window.confirm(`删除「${site.name}」？`)) {
-                        void mutate(() => api(`/api/bookmarks/${site.id}`, { method: 'DELETE' }), '删除失败');
-                      }
-                    }}
-                  >
-                    删除
-                  </button>
+                  {confirming === `bm:${site.id}` ? (
+                    <>
+                      <button className="sv-btn danger" disabled={busy} onClick={() => { setConfirming(null); void mutate(() => api(`/api/bookmarks/${site.id}`, { method: 'DELETE' }), '删除失败'); }}>确认删除</button>
+                      <button className="sv-btn ghost" onClick={() => setConfirming(null)}>取消</button>
+                    </>
+                  ) : (
+                    <button className="sv-btn danger" disabled={busy} onClick={() => setConfirming(`bm:${site.id}`)}>
+                      删除
+                    </button>
+                  )}
                 </div>
               ),
             )}
@@ -205,18 +205,21 @@ export function ServerBookmarksAdmin() {
                   }
                 }}
               />
-              <button
-                className="sv-btn danger"
-                disabled={busy || count > 0}
-                title={count > 0 ? '分类下还有书签，不能删' : '删除空分类'}
-                onClick={() => {
-                  if (window.confirm(`删除空分类「${c.catelog}」？`)) {
-                    void mutate(() => api(`/api/categories/${encodeURIComponent(c.catelog)}`, { method: 'DELETE' }), '删除失败');
-                  }
-                }}
-              >
-                删除
-              </button>
+              {confirming === `cat:${c.catelog}` ? (
+                <>
+                  <button className="sv-btn danger" disabled={busy} onClick={() => { setConfirming(null); void mutate(() => api(`/api/categories/${encodeURIComponent(c.catelog)}`, { method: 'DELETE' }), '删除失败'); }}>确认删除</button>
+                  <button className="sv-btn ghost" onClick={() => setConfirming(null)}>取消</button>
+                </>
+              ) : (
+                <button
+                  className="sv-btn danger"
+                  disabled={busy || count > 0}
+                  title={count > 0 ? '分类下还有书签，不能删' : '删除空分类'}
+                  onClick={() => setConfirming(`cat:${c.catelog}`)}
+                >
+                  删除
+                </button>
+              )}
             </div>
           );
         })}
