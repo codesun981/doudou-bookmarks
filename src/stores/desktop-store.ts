@@ -33,6 +33,7 @@ import { WALLPAPERS } from '../features/layout/wallpapers';
 import { loadBookmarkSnapshot } from '../services/bookmark-service';
 import { refreshFaviconSources } from '../services/favicon-refresh';
 import { storageService } from '../services/storage-service';
+import { isServerMode } from '../services/server-mode';
 import { SCHEMA_VERSION } from '../utils/constants';
 import { createDefaultPomodoro } from '../utils/defaults';
 import { modifierLabel } from '../utils/events';
@@ -868,6 +869,18 @@ export function refreshBookmarks(options: { reimport?: boolean; silent?: boolean
       if (result.changed) {
         desktops = result.desktops;
         layoutChanged = true;
+      }
+      if (isServerMode()) {
+        // 豆豆书签（fork）：云端删除即真删除，剪掉桌面上已不存在的书签 id，
+        // 不留上游扩展语义的「已失效」占位。
+        desktops = desktops.map((desktop) => {
+          const kept = desktop.bookmarkIds.filter((id) => loaded.index.has(id));
+          if (kept.length !== desktop.bookmarkIds.length) {
+            layoutChanged = true;
+            return { ...desktop, bookmarkIds: kept };
+          }
+          return desktop;
+        });
       }
     }
 

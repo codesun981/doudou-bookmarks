@@ -175,6 +175,17 @@ export async function bootstrapWorkspace(): Promise<void> {
     desktops = result.desktops;
     cache = result.cache;
     layoutChanged = result.changed;
+    if (isServerMode()) {
+      // 豆豆书签（fork）：同 refreshBookmarks，云端已删书签不留占位。
+      desktops = desktops.map((desktop) => {
+        const kept = desktop.bookmarkIds.filter((id) => loaded.index.has(id));
+        if (kept.length !== desktop.bookmarkIds.length) {
+          layoutChanged = true;
+          return { ...desktop, bookmarkIds: kept };
+        }
+        return desktop;
+      });
+    }
   }
 
   const desktopOrder = orderFor(snapshot.desktopLayout.desktopOrder, desktops);
