@@ -82,16 +82,25 @@ function createServerBackend(): Backend {
     }
     return cache;
   }
+  // KV 免费额度写入只有 1000 次/天：整份 PUT 做 10 秒节流 + 内容未变跳过，
+  // 避免高频状态变化（拖拽、计时器、同步）把写入额度烧光（2026-11-20 事故）。
+  let lastSentBody = '';
+  let lastSentAt = 0;
   function schedulePut(): void {
     if (putTimer) clearTimeout(putTimer);
+    const wait = Math.max(250, 10_000 - (Date.now() - lastSentAt));
     putTimer = setTimeout(() => {
       if (!cache) return;
+      const body = JSON.stringify(cache);
+      if (body === lastSentBody) return;
+      lastSentBody = body;
+      lastSentAt = Date.now();
       void fetch('/api/storage', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(cache),
+        body,
       }).catch(() => undefined);
-    }, 250);
+    }, wait);
   }
   return {
     async get(keys) {
