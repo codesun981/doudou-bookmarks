@@ -36,13 +36,50 @@ function isExtensionPage(): boolean {
   );
 }
 
-export async function readBookmarkTree(): Promise<BookmarkNode[]> {
-  if (isServerMode()) {
-    // 豆豆书签（fork）：书签树来自 Worker 的 /api/tree（D1）。
+// 豆豆书签（fork）：书签树缓存——书签稳定后不必每次全量拉。
+// 本地存 {version, tree}，先查 /api/version 的 data 版本号，没变直接用缓存。
+const TREE_CACHE_KEY = 'glassdesk:tree-cache:v1';
+interface TreeCache { version: number | null; tree: BookmarkNode[] }
+function loadTreeCache(): TreeCache | null {
+  try {
+    const raw = localStorage.getItem(TREE_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as TreeCache;
+    return Array.isArray(parsed.tree) ? parsed : null;
+  } catch { return null; }
+}
+let treeMemo: Promise<BookmarkNode[]> | null = null;
+/** 刷新书签时调用：清掉会话内记忆，强制按版本号重查书签树（版本未变仍走本地缓存）。 */
+export function invalidateBookmarkTreeCache(): void {
+  treeMemo = null;
+}
+async function readServerTree(): Promise<BookmarkNode[]> {
+  const local = loadTreeCache();
+  try {
+    if (local && local.version !== null) {
+      const vres = await fetch('/api/version');
+      if (vres.ok) {
+        const v = (await vres.json()) as { data?: number };
+        if (typeof v.data === 'number' && v.data === local.version) return local.tree;
+      }
+    }
     const res = await fetch('/api/tree');
     if (!res.ok) throw new Error('TREE_LOAD_FAILED');
-    const data = (await res.json()) as { tree: BookmarkNode[] };
+    const data = (await res.json()) as { tree: BookmarkNode[]; version?: number };
+    try {
+      localStorage.setItem(TREE_CACHE_KEY, JSON.stringify({ version: data.version ?? null, tree: data.tree }));
+    } catch { /* 缓存写不下不影响使用 */ }
     return data.tree;
+  } catch (err) {
+    if (local) return local.tree;
+    throw err;
+  }
+}
+export async function readBookmarkTree(): Promise<BookmarkNode[]> {
+  if (isServerMode()) {
+    // 豆豆书签（fork）：书签树来自 Worker 的 /api/tree（D1），带版本缓存。
+    if (!treeMemo) treeMemo = readServerTree();
+    return treeMemo;
   }
   if (hasBookmarkAccess()) {
     const tree = await chrome.bookmarks.getTree();

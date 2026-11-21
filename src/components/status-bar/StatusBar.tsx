@@ -16,9 +16,9 @@ export function StatusBar() {
         <button
           type="button"
           className="brand status-menu-button"
-          aria-label="关于 GlassDesk"
-          title="关于 GlassDesk"
-          onClick={() => setSettingsOpen(true, 'about')}
+          aria-label="设置"
+          title="设置"
+          onClick={() => setSettingsOpen(true, 'appearance')}
         >
           <AppleLogo size={15} weight="fill" aria-hidden />
         </button>

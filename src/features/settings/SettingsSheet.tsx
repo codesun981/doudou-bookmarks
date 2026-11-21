@@ -9,7 +9,6 @@ import {
   HardDrive,
   Info,
   Keyboard,
-  LockSimple,
   MagnifyingGlass,
   Monitor,
   Plus,
@@ -49,7 +48,7 @@ import {
   useUiState,
   pushToast,
 } from '../../stores/ui-store';
-import { APP_VERSION, SCHEMA_VERSION } from '../../utils/constants';
+import { APP_VERSION } from '../../utils/constants';
 import { modifierLabel } from '../../utils/events';
 import { ConfirmDialog, Modal } from '../../components/ui/Modal';
 import { Segmented, SettingRow, Switch } from '../../components/ui/Controls';
@@ -59,7 +58,6 @@ const SECTIONS: Array<{ id: SettingsSection; label: string; icon: typeof Monitor
   { id: 'desktops', label: '桌面与书签', icon: Monitor },
   { id: 'search', label: '搜索与快捷键', icon: MagnifyingGlass },
   { id: 'data', label: '数据与备份', icon: HardDrive },
-  { id: 'about', label: '关于', icon: Info },
   ...(isServerMode()
     ? [
         { id: 'server' as const, label: '书签管理（云端）', icon: HardDrive },
@@ -70,11 +68,11 @@ const SECTIONS: Array<{ id: SettingsSection; label: string; icon: typeof Monitor
 
 const SECTION_COPY: Record<SettingsSection, { title: string; description: string }> = {
   appearance: { title: '外观', description: '壁纸、书签列数、玻璃质感和细微的动效偏好。' },
-  desktops: { title: '桌面与书签', description: '管理桌面、文件夹映射和书签同步。' },
+  desktops: { title: '桌面与书签', description: '管理桌面的名称、顺序与壁纸。' },
   server: { title: '书签管理（云端）', description: '书签与分类存在 Cloudflare 云端，在这里增删改，桌面会跟着同步。' },
   imgbed: { title: '图床上传', description: '把图片上传到你的图床（cfimg），拿到直链后可以直接设为桌面壁纸。' },
   search: { title: '搜索与快捷键', description: '默认搜索引擎与键盘操作。' },
-  data: { title: '数据与备份', description: '所有数据都保存在这台电脑上。' },
+  data: { title: '数据与备份', description: '导出、导入与重置界面数据。' },
   about: { title: '关于 GlassDesk', description: '版本、权限和实现边界。' },
 };
 
@@ -87,11 +85,11 @@ function formatBytes(bytes: number): string {
 export function SettingsSheet() {
   const { settingsOpen, settingsSection } = useUiState();
   const workspace = useWorkspace();
-  const [section, setSection] = useState<SettingsSection>(settingsSection);
+  const [section, setSection] = useState<SettingsSection>(settingsSection === 'about' ? 'appearance' : settingsSection);
   const bodyRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (settingsOpen) setSection(settingsSection);
+    if (settingsOpen) setSection(settingsSection === 'about' ? 'appearance' : settingsSection);
   }, [settingsOpen, settingsSection]);
 
   useEffect(() => {
@@ -145,9 +143,19 @@ export function SettingsSheet() {
           );
         })}
         <div className="settings-nav__footer">
-          全部数据保存在本机。
-          <br />
-          浏览器书签不会被修改。
+          {isServerMode() ? (
+            <>
+              书签存放在云端。
+              <br />
+              界面布局云端同步。
+            </>
+          ) : (
+            <>
+              全部数据保存在本机。
+              <br />
+              浏览器书签不会被修改。
+            </>
+          )}
         </div>
       </aside>
 
@@ -173,7 +181,6 @@ export function SettingsSheet() {
           {section === 'desktops' ? <DesktopsSection /> : null}
           {section === 'search' ? <SearchSection /> : null}
           {section === 'data' ? <DataSection /> : null}
-          {section === 'about' ? <AboutSection /> : null}
           {section === 'server' ? <ServerBookmarksAdmin /> : null}
           {section === 'imgbed' ? <ImgbedUploadSection activeDesktop={activeDesktop} /> : null}
         </div>
@@ -530,8 +537,8 @@ function AppearanceSection({ activeDesktop }: { activeDesktop: Desktop | null })
       <div className="settings-group">
         <div className="settings-group__title">桌面书签</div>
         <SettingRow
-          title="每行显示数量"
-          description="调整右侧书签区域的列数。窄屏会自动收敛到 3–4 列。"
+          title="每行显示数量（图标模式）"
+          description="调整图标模式下书签区域的列数；卡片模式按宽度自动排版，此项不生效。窄屏会自动收敛到 3–4 列。"
         >
           <Segmented
             label="每行书签数量"
@@ -640,7 +647,7 @@ function DesktopsSection() {
 
   return (
     <div className="settings-section">
-      {permissionMissing ? (
+      {permissionMissing && !isServerMode() ? (
         <div className="notice notice--warning">
           <WarningCircle size={15} weight="fill" />
           <span>
@@ -649,6 +656,7 @@ function DesktopsSection() {
         </div>
       ) : null}
 
+      {!isServerMode() ? (
       <div className="settings-group">
         <div className="settings-group__title">书签同步</div>
         <SettingRow
@@ -692,6 +700,7 @@ function DesktopsSection() {
           </button>
         </SettingRow>
       </div>
+      ) : null}
 
       <div className="settings-group">
         <div className="settings-group__title">桌面列表</div>
@@ -728,7 +737,7 @@ function DesktopsSection() {
             <Plus size={13} />
             空白桌面
           </button>
-          {availableFolders.length > 0 ? (
+          {availableFolders.length > 0 && !isServerMode() ? (
             <>
               <select
                 className="select"
@@ -1011,6 +1020,14 @@ function DataSection() {
 
   return (
     <div className="settings-section">
+      {isServerMode() ? (
+        <div className="notice">
+          <Info size={15} />
+          <span>
+            云端模式：书签与分类存放在 Cloudflare。这里的导入备份与重置只影响界面布局和设置，不会删除云端书签。
+          </span>
+        </div>
+      ) : null}
       {workspace.isDemo ? (
         <div className="notice">
           <Info size={15} weight="fill" />
@@ -1118,62 +1135,6 @@ function DataSection() {
           void storageService.resetAll().then(() => window.location.reload());
         }}
       />
-    </div>
-  );
-}
-
-function AboutSection() {
-  return (
-    <div className="settings-section">
-      <div className="settings-group">
-        <div className="settings-group__title">GlassDesk v{APP_VERSION}</div>
-        <p className="settings-note" style={{ marginTop: 0 }}>
-          一个浅色液态玻璃风格的新标签页。浏览器书签是真实数据源，桌面布局是独立的本地配置。
-          移动或删除桌面上的书签不会改写浏览器里的原始文件夹。
-        </p>
-        <div className="about-grid" style={{ marginTop: 12 }}>
-          <div className="about-card">
-            <h4>技术栈</h4>
-            <p>React、TypeScript、Vite、Manifest V3。</p>
-          </div>
-          <div className="about-card">
-            <h4>存储</h4>
-            <p>chrome.storage.local，schema v{SCHEMA_VERSION}，写入前提供迁移备份。</p>
-          </div>
-          <div className="about-card">
-            <h4>权限</h4>
-            <p>只申请书签和存储。不读取标签页、历史记录或网页内容。</p>
-          </div>
-          <div className="about-card">
-            <h4>离线</h4>
-            <p>桌面、便签、倒计时和书签搜索无需联网。搜索引擎本身需要网络。</p>
-          </div>
-        </div>
-      </div>
-
-      <div className="settings-group">
-        <div className="settings-group__title">关于液态玻璃</div>
-        <p className="settings-note" style={{ marginTop: 0 }}>
-          网页无法调用 Apple 的系统级 Liquid Glass。本扩展使用半透明背景、单层
-          backdrop-filter、内边框高光和多层阴影来近似这种材质，并在低玻璃强度或系统要求减少动态效果时降级。
-        </p>
-      </div>
-
-      <div className="settings-group">
-        <div className="settings-group__title">书签与图标</div>
-        <p className="settings-note" style={{ marginTop: 0 }}>
-          为避免额外权限和网络请求，书签图标使用本地生成的首字母与色相。没有网址的失效书签会以虚线占位保留，
-          你可以随时清理。
-        </p>
-        <div className="backup-actions" style={{ marginTop: 12 }}>
-          <span className="chip">
-            <LockSimple size={12} />
-            完全本地
-          </span>
-          <span className="chip">无远程脚本</span>
-          <span className="chip">书签只读</span>
-        </div>
-      </div>
     </div>
   );
 }
