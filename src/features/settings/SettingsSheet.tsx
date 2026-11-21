@@ -199,64 +199,86 @@ function ImgbedGallery({ disabled, onPick }: { disabled: boolean; onPick: (url: 
   }
 
   return (
-    <div style={{ padding: '0 2px 6px' }}>
-      <button
-        type="button"
-        className="chip"
-        disabled={disabled}
-        onClick={() => {
-          const next = !open;
-          setOpen(next);
-          if (next && state === 'idle') void load(0);
-        }}
-      >
-        {open ? '收起图床图库' : '从图床选图'}
-      </button>
-      {open && state === 'loading' && files.length === 0 ? (
-        <p style={{ fontSize: 12, opacity: 0.65, padding: '8px 2px' }}>正在从图床拉取图片…</p>
-      ) : null}
-      {open && state === 'unconfigured' ? (
-        <p style={{ fontSize: 12, opacity: 0.65, padding: '8px 2px' }}>图床图库还没配置好（缺图床的 API Token），先用下面的贴链接方式，或让 COCO 帮你接上。</p>
-      ) : null}
-      {open && state === 'error' ? (
-        <p style={{ fontSize: 12, opacity: 0.65, padding: '8px 2px' }}>图床暂时连不上，稍后再试；也可以先用贴链接。</p>
-      ) : null}
-      {open && files.length > 0 ? (
-        <>
-          <div
-            style={{
-              display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(86px, 1fr))',
-              gap: 8, paddingTop: 10, maxHeight: 300, overflowY: 'auto',
-            }}
-          >
-            {files.map((file) => (
-              <button
-                key={file.name}
-                type="button"
-                title={file.name}
-                onClick={() => onPick(file.url)}
-                style={{
-                  height: 62, borderRadius: 10, border: '1px solid rgb(127 140 180 / 25%)',
-                  background: `url("${file.url}") center / cover no-repeat`,
-                  cursor: 'pointer', padding: 0,
-                }}
-              />
-            ))}
+    <>
+      <div style={{ padding: '2px 2px 6px' }}>
+        <button
+          type="button"
+          className="chip"
+          disabled={disabled}
+          onClick={() => {
+            setOpen(true);
+            if (state === 'idle') void load(0);
+          }}
+        >
+          从图床选图
+        </button>
+      </div>
+      <Modal open={open} onClose={() => setOpen(false)} label="图床图库">
+        <div style={{ padding: 20 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
+            <div className="modal__title">图床图库</div>
+            <span style={{ fontSize: 12, opacity: 0.6 }}>
+              {state === 'ready' && total > 0 ? `共 ${total} 张 · 点任意一张设为当前桌面壁纸` : ''}
+            </span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingTop: 8 }}>
-            <span style={{ fontSize: 11.5, opacity: 0.6 }}>共 {total} 张，点任意一张即设为当前桌面壁纸</span>
+          {state === 'loading' && files.length === 0 ? (
+            <p className="modal__text">正在从图床拉取图片…</p>
+          ) : null}
+          {state === 'unconfigured' ? (
+            <p className="modal__text">图床图库还没配置好（缺图床的 API Token），先用下面的贴链接方式，或让 COCO 帮你接上。</p>
+          ) : null}
+          {state === 'error' ? (
+            <p className="modal__text">图床暂时连不上，稍后再试；也可以先用贴链接。</p>
+          ) : null}
+          {state === 'ready' && files.length === 0 ? (
+            <p className="modal__text">图床里暂时没有图片，先去图床上传几张吧。</p>
+          ) : null}
+          {files.length > 0 ? (
+            <div
+              style={{
+                display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(128px, 1fr))',
+                gap: 10, marginTop: 14, maxHeight: '52vh', overflowY: 'auto', paddingRight: 2,
+              }}
+            >
+              {files.map((file) => (
+                <button
+                  key={file.name}
+                  type="button"
+                  title={file.name}
+                  onClick={() => {
+                    onPick(file.url);
+                    setOpen(false);
+                  }}
+                  style={{
+                    aspectRatio: '4 / 3', borderRadius: 12, padding: 0, overflow: 'hidden',
+                    border: '1px solid rgb(127 140 180 / 25%)', background: 'rgb(127 140 180 / 12%)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <img
+                    src={file.url}
+                    alt=""
+                    loading="lazy"
+                    draggable={false}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                  />
+                </button>
+              ))}
+            </div>
+          ) : null}
+          <div className="modal__actions">
             {returned < total ? (
               <button type="button" className="chip" disabled={state === 'loading'} onClick={() => void load(returned)}>
                 {state === 'loading' ? '加载中…' : '加载更多'}
               </button>
             ) : null}
+            <button type="button" className="chip" onClick={() => setOpen(false)}>
+              关闭
+            </button>
           </div>
-        </>
-      ) : null}
-      {open && state === 'ready' && files.length === 0 ? (
-        <p style={{ fontSize: 12, opacity: 0.65, padding: '8px 2px' }}>图床里暂时没有图片，先去图床上传几张吧。</p>
-      ) : null}
-    </div>
+        </div>
+      </Modal>
+    </>
   );
 }
 
@@ -294,7 +316,7 @@ function AppearanceSection({ activeDesktop }: { activeDesktop: Desktop | null })
             </button>
           ))}
         </div>
-        <div className="settings-row">
+        <div className="settings-row" style={{ borderBottom: 'none', paddingBottom: 0 }}>
           <div className="settings-row__text">
             <h3>图床壁纸</h3>
             <p>把图床（cfimg）里图片的直链贴进来，即可设为当前桌面壁纸。图片存在图床、本站只记链接。</p>

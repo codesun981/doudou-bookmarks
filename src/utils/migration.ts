@@ -101,6 +101,14 @@ function oneOf<T extends string>(value: unknown, allowed: readonly T[], fallback
   return typeof value === 'string' && allowed.includes(value as T) ? (value as T) : fallback;
 }
 
+// 壁纸除了预设 id，还允许图床直链形态 'url:https://…'（见 wallpapers.ts 的动态预设）
+function wallpaperValue(value: unknown): WallpaperId | undefined {
+  if (typeof value !== 'string') return undefined;
+  if (WALLPAPER_IDS.includes(value as WallpaperId)) return value as WallpaperId;
+  if (/^url:https:\/\/\S+$/.test(value)) return value as WallpaperId;
+  return undefined;
+}
+
 function stringArray(value: unknown, maxItems: number, maxLength: number): string[] {
   if (!Array.isArray(value)) return [];
   const seen = new Set<string>();
@@ -131,7 +139,7 @@ function sanitizeSettings(raw: unknown, issues: string[]): AppSettings {
     bookmarkSyncMode: oneOf<BookmarkSyncMode>(value.bookmarkSyncMode, SYNC_MODES, base.bookmarkSyncMode),
     dockAutoHide: asBoolean(value.dockAutoHide, base.dockAutoHide),
     searchEngine: oneOf<SearchEngineId>(value.searchEngine, SEARCH_ENGINE_IDS, base.searchEngine),
-    defaultWallpaper: oneOf<WallpaperId>(value.defaultWallpaper, WALLPAPER_IDS, base.defaultWallpaper),
+    defaultWallpaper: wallpaperValue(value.defaultWallpaper) ?? base.defaultWallpaper,
     dockPinnedBookmarkIds: stringArray(value.dockPinnedBookmarkIds, 12, 200),
     bookmarkColumns: (() => {
       const candidate = Math.round(
@@ -165,10 +173,7 @@ function sanitizeDesktops(rawLayout: unknown, settings: AppSettings, issues: str
     }
     seen.add(id);
     const now = Date.now();
-    const wallpaperValue = record.wallpaper;
-    const wallpaper = WALLPAPER_IDS.includes(wallpaperValue as WallpaperId)
-      ? (wallpaperValue as WallpaperId)
-      : undefined;
+    const wallpaper = wallpaperValue(record.wallpaper);
     desktops.push({
       id,
       name: asCleanString(record.name, 60, '未命名桌面'),
