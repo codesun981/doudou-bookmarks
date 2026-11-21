@@ -147,6 +147,7 @@ export function resolveBookmarkView(state: WorkspaceState, id: string): Bookmark
       path: live.path,
       desc: live.desc,
       tag: live.tag,
+      deploy: live.deploy,
       links: live.links,
       missing: false,
     };
@@ -163,6 +164,7 @@ export function resolveBookmarkView(state: WorkspaceState, id: string): Bookmark
       path: cached.path,
       desc: cached.desc,
       tag: cached.tag,
+      deploy: cached.deploy,
       links: cached.links,
       missing: true,
     };

@@ -1,5 +1,6 @@
 import type { CSSProperties, DragEvent, KeyboardEvent, MouseEvent } from 'react';
-import { ArrowSquareOut, List, WarningCircle } from '@phosphor-icons/react';
+import { ArrowSquareOut, Copy, List, WarningCircle } from '@phosphor-icons/react';
+import { pushToast } from '../../stores/ui-store';
 import type { BookmarkView } from '../../stores/desktop-store';
 import { useFavicon } from '../../hooks/use-favicon';
 import { useSettings } from '../../stores/settings-store';
@@ -153,6 +154,7 @@ export function BookmarkTile({
           <span className="bookmark-card__name">{view.title}</span>
           {pinned ? <span className="bookmark-card__pin" aria-label="已钉在 Dock" /> : null}
           {view.tag ? <span className="bookmark-card__tag">{view.tag}</span> : null}
+          {view.deploy ? <span className="bookmark-card__deploy">{view.deploy}</span> : null}
           {multi ? (
             <span className="bookmark-card__multi">{view.links!.length + 1} 个入口</span>
           ) : null}
@@ -164,6 +166,24 @@ export function BookmarkTile({
         )}
         {view.desc ? <span className="bookmark-card__desc">{view.desc}</span> : null}
       </span>
+      {!view.missing ? (
+        <button
+          type="button"
+          className={`bookmark-card__copy${multi && settings.multiLinkQuickButton ? ' bookmark-card__copy--shifted' : ''}`}
+          title="复制网址"
+          aria-label={`复制${view.title}的网址`}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            void navigator.clipboard
+              .writeText(view.url)
+              .then(() => pushToast('网址已复制。', 'success'))
+              .catch(() => pushToast('复制失败，请重试。', 'error'));
+          }}
+        >
+          <Copy size={14} />
+        </button>
+      ) : null}
       {multi && settings.multiLinkQuickButton ? (
         <button
           type="button"

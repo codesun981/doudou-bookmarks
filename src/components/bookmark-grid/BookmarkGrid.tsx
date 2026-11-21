@@ -768,6 +768,7 @@ function BookmarkEditModal({
   const [url, setUrl] = useState(view?.url ?? '');
   const [desc, setDesc] = useState(view?.desc ?? '');
   const [tag, setTag] = useState(view?.tag ?? '');
+  const [deploy, setDeploy] = useState(view?.deploy ?? '');
   const [links, setLinks] = useState<BookmarkLink[]>(view?.links ?? []);
   const [catelog, setCatelog] = useState(view?.path[0] ?? defaultCategory ?? categories[0] ?? '');
   const [busy, setBusy] = useState(false);
@@ -796,7 +797,7 @@ function BookmarkEditModal({
     setBusy(true);
     setError('');
     try {
-      const payload = JSON.stringify({ name: n, url: u, desc: desc.trim(), tag: tag.trim(), links: cleanLinks(links), catelog });
+      const payload = JSON.stringify({ name: n, url: u, desc: desc.trim(), tag: tag.trim(), deploy: deploy.trim(), links: cleanLinks(links), catelog });
       const res = view
         ? await fetch(`/api/bookmarks/${view.id}`, {
             method: 'PUT',
@@ -902,6 +903,15 @@ function BookmarkEditModal({
         <label className="bookmark-edit__field">
           <span>标签（卡片上显示，可空）</span>
           <input value={tag} onChange={(e) => setTag(e.target.value)} placeholder="如：面板 / 代理 / 博客" maxLength={20} />
+        </label>
+        <label className="bookmark-edit__field">
+          <span>部署在（卡片上显示，可空）</span>
+          <input value={deploy} onChange={(e) => setDeploy(e.target.value)} placeholder="如：CF Worker / Vercel / mini" maxLength={24} list="deploy-presets" />
+          <datalist id="deploy-presets">
+            {['CF Worker', 'CF Pages', 'Vercel', 'GitHub Pages', 'mini', 'aws-two', 'aws-ohio', 'hututu', 'relay', 'tai', 'dodo', '外部'].map((p) => (
+              <option key={p} value={p} />
+            ))}
+          </datalist>
         </label>
         <div className="bookmark-edit__field">
           <span>副链接（同一服务的其他入口，可空）</span>

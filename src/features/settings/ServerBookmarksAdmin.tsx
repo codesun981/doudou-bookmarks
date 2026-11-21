@@ -12,6 +12,7 @@ interface SiteRow {
   url: string;
   desc: string | null;
   tag: string | null;
+  deploy: string | null;
   links: BookmarkLink[];
   catelog: string;
   sort_order: number;
@@ -44,6 +45,7 @@ const CSS = `
 .sv-error { color: #ff9f0a; font-size: 12.5px; }
 .sv-cat { font-size: 12px; font-weight: 700; letter-spacing: .02em; color: rgb(235 240 250 / 75%); margin: 12px 0 2px; }
 .sv-tag { font-size: 11px; font-weight: 600; color: #ffd60a; background: rgb(255 214 10 / 13%); border: 1px solid rgb(255 214 10 / 25%); padding: 1px 7px; border-radius: 999px; white-space: nowrap; }
+.sv-deploy { font-size: 11px; font-weight: 600; color: #cbd5e1; background: rgb(148 163 184 / 16%); border: 1px solid rgb(148 163 184 / 30%); padding: 1px 7px; border-radius: 999px; white-space: nowrap; }
 .sv-links-chip { font-size: 11px; font-weight: 600; color: #7db4ff; background: rgb(80 140 255 / 13%); border: 1px solid rgb(120 170 255 / 30%); padding: 1px 7px; border-radius: 999px; white-space: nowrap; }
 .sv-links-row { padding: 2px 0 10px 4px; }
 .sv-place { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 6px 0 10px 4px; font-size: 12px; color: rgb(235 240 250 / 60%); }
@@ -58,7 +60,7 @@ export function ServerBookmarksAdmin() {
   const [data, setData] = useState<AdminData | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [form, setForm] = useState({ name: '', url: '', desc: '', tag: '', catelog: '' });
+  const [form, setForm] = useState({ name: '', url: '', desc: '', tag: '', deploy: '', catelog: '' });
   const [formLinks, setFormLinks] = useState<BookmarkLink[]>([]);
   const [newCategory, setNewCategory] = useState('');
   const [editing, setEditing] = useState<SiteRow | null>(null);
@@ -130,6 +132,7 @@ export function ServerBookmarksAdmin() {
           <input className="sv-input" placeholder="https://…" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} />
           <input className="sv-input" placeholder="描述（可空）" value={form.desc} onChange={(e) => setForm({ ...form, desc: e.target.value })} />
           <input className="sv-input" placeholder="标签（可空，如：博客）" maxLength={20} value={form.tag} onChange={(e) => setForm({ ...form, tag: e.target.value })} />
+          <input className="sv-input" placeholder="部署在（如 CF Worker）" maxLength={24} value={form.deploy} onChange={(e) => setForm({ ...form, deploy: e.target.value })} />
           <select className="sv-select" value={form.catelog} onChange={(e) => setForm({ ...form, catelog: e.target.value })}>
             <option value="">选分类…</option>
             {allCategories.map((c) => (
@@ -148,7 +151,7 @@ export function ServerBookmarksAdmin() {
               void mutate(async () => {
                 const res = await api('/api/bookmarks', { method: 'POST', body: JSON.stringify({ ...form, links: cleanLinks(formLinks) }) });
                 if (res.ok) {
-                  setForm({ name: '', url: '', desc: '', tag: '', catelog: form.catelog });
+                  setForm({ name: '', url: '', desc: '', tag: '', deploy: '', catelog: form.catelog });
                   setFormLinks([]);
                 }
                 return res;
@@ -172,6 +175,7 @@ export function ServerBookmarksAdmin() {
                     <input className="sv-input" style={{ width: 110 }} value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} />
                     <input className="sv-input" style={{ flex: 1 }} value={editing.url} onChange={(e) => setEditing({ ...editing, url: e.target.value })} />
                     <input className="sv-input" style={{ width: 84 }} placeholder="标签（可空）" maxLength={20} value={editing.tag ?? ''} onChange={(e) => setEditing({ ...editing, tag: e.target.value })} />
+                    <input className="sv-input" style={{ width: 96 }} placeholder="部署在" maxLength={24} value={editing.deploy ?? ''} onChange={(e) => setEditing({ ...editing, deploy: e.target.value })} />
                     <select className="sv-select" value={editing.catelog} onChange={(e) => setEditing({ ...editing, catelog: e.target.value })}>
                       {allCategories.map((c) => (
                         <option key={c} value={c}>{c}</option>
@@ -193,6 +197,7 @@ export function ServerBookmarksAdmin() {
                   <div className="sv-row">
                     <span className="sv-name">{site.name}</span>
                     {site.tag ? <span className="sv-tag">{site.tag}</span> : null}
+                    {site.deploy ? <span className="sv-deploy">{site.deploy}</span> : null}
                     {site.links?.length ? <span className="sv-links-chip">{site.links.length + 1} 个入口</span> : null}
                     <span className="sv-url">{site.url}</span>
                     <button className="sv-btn ghost" onClick={() => setPlacingId(placingId === site.id ? null : site.id)}>上桌</button>

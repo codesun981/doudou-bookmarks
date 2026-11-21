@@ -52,8 +52,8 @@ export function DesktopStage() {
     const stage = stageRef.current;
     if (!stage) return;
     let accumulated = 0;
-    let cooldownUntil = 0;
-    let resetTimer: number | undefined;
+    let lastWheelAt = 0;
+    let gestureSwitched = false;
     let swipeStart: { x: number; y: number; at: number } | null = null;
 
     const interactiveTarget = (target: EventTarget | null): boolean =>
@@ -96,19 +96,21 @@ export function DesktopStage() {
       }
 
       event.preventDefault();
+      // Gesture-based switching: wheel/trackpad events arriving <250ms apart
+      // belong to one gesture (including the momentum tail). One gesture may
+      // switch at most one desktop; leftover inertia must never chain into
+      // a second switch.
       const now = performance.now();
-      if (now < cooldownUntil) {
+      if (now - lastWheelAt > 250) {
         accumulated = 0;
-        return;
+        gestureSwitched = false;
       }
+      lastWheelAt = now;
+      if (gestureSwitched) return;
       accumulated += horizontal ? event.deltaX : event.deltaY;
-      window.clearTimeout(resetTimer);
-      resetTimer = window.setTimeout(() => {
-        accumulated = 0;
-      }, 240);
       if (Math.abs(accumulated) < (horizontal ? 36 : 48)) return;
       if (switchDesktop(accumulated > 0 ? 1 : -1)) {
-        cooldownUntil = now + 420;
+        gestureSwitched = true;
         accumulated = 0;
       }
     };
@@ -142,7 +144,6 @@ export function DesktopStage() {
       stage.removeEventListener('pointerdown', handlePointerDown);
       stage.removeEventListener('pointerup', handlePointerUp);
       stage.removeEventListener('pointercancel', cancelSwipe);
-      window.clearTimeout(resetTimer);
     };
   }, []);
 

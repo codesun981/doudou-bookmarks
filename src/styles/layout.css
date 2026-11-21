@@ -1116,23 +1116,21 @@
 }
 
 .bookmark-icon--favicon {
-  padding: 9px;
-  background: rgb(255 255 255 / 94%);
-  border-color: rgb(255 255 255 / 55%);
-  box-shadow:
-    inset 0 1px 0 #fff,
-    0 7px 15px -7px rgb(0 0 0 / 60%);
+  padding: 0;
+  background: transparent;
+  border-color: transparent;
+  box-shadow: 0 7px 15px -7px rgb(0 0 0 / 60%);
   text-shadow: none;
 }
 
 .bookmark-favicon {
   position: absolute;
-  top: 9px;
-  left: 9px;
-  width: calc(100% - 18px);
-  height: calc(100% - 18px);
-  border-radius: 4px;
-  object-fit: contain;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
   opacity: 0;
   pointer-events: none;
   transition: opacity 140ms var(--ease-out);
@@ -2186,8 +2184,43 @@
   white-space: nowrap;
 }
 .bookmark-card:has(.bookmark-card__quick) .bookmark-card__title {
-  padding-right: 28px;
+  padding-right: 62px;
 }
+.bookmark-card:has(.bookmark-card__copy):not(:has(.bookmark-card__quick)) .bookmark-card__title {
+  padding-right: 34px;
+}
+.bookmark-card__deploy {
+  flex: none;
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1;
+  padding: 3px 7px;
+  border-radius: 999px;
+  color: #e2e8f0;
+  background: rgb(148 163 184 / 22%);
+  border: 1px solid rgb(148 163 184 / 32%);
+  white-space: nowrap;
+}
+.bookmark-card__copy {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  border: 1px solid rgb(255 255 255 / 22%);
+  background: rgb(15 23 42 / 42%);
+  color: #fff;
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 140ms ease, background 140ms ease;
+}
+.bookmark-card__copy--shifted { right: 42px; }
+.bookmark-card__copy:hover { opacity: 1; background: rgb(15 23 42 / 68%); }
+.bookmark-card:focus-within .bookmark-card__copy { opacity: 1; }
 .bookmark-card__quick {
   position: absolute;
   top: 8px;

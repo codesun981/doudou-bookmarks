@@ -28,6 +28,7 @@ export function buildBookmarkCache(
       path: meta.path,
       ...(meta.desc ? { desc: meta.desc } : {}),
       ...(meta.tag ? { tag: meta.tag } : {}),
+      ...(meta.deploy ? { deploy: meta.deploy } : {}),
       ...(meta.links?.length ? { links: meta.links } : {}),
       cachedAt: now,
     };

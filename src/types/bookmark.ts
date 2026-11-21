@@ -11,6 +11,7 @@ export interface BookmarkNode {
   url?: string;
   desc?: string;
   tag?: string;
+  deploy?: string;
   links?: BookmarkLink[];
   children?: BookmarkNode[];
   dateAdded?: number;
@@ -32,6 +33,7 @@ export interface BookmarkItemView {
   /** 站点备注（服务端模式来自 D1 sites.desc）。 */
   desc?: string;
   tag?: string;
+  deploy?: string;
   links?: BookmarkLink[];
 }
 
@@ -43,6 +45,7 @@ export interface BookmarkMeta {
   path: string[];
   desc?: string;
   tag?: string;
+  deploy?: string;
   links?: BookmarkLink[];
   dateAdded?: number;
 }
@@ -63,6 +66,7 @@ export interface BookmarkCacheEntry {
   path: string[];
   desc?: string;
   tag?: string;
+  deploy?: string;
   links?: BookmarkLink[];
   cachedAt: number;
 }
