@@ -179,6 +179,13 @@ export function SettingsSheet() {
 function AppearanceSection({ activeDesktop }: { activeDesktop: Desktop | null }) {
   const settings = useSettings();
   const wallpaperId = activeDesktop?.wallpaper ?? settings.defaultWallpaper;
+  const [imgbedUrl, setImgbedUrl] = useState(
+    typeof wallpaperId === 'string' && wallpaperId.startsWith('url:') ? wallpaperId.slice(4) : '',
+  );
+  // 当前桌面壁纸变化时同步输入框：是图床壁纸就回显链接，选了预设就清空，避免残留误导
+  useEffect(() => {
+    setImgbedUrl(typeof wallpaperId === 'string' && wallpaperId.startsWith('url:') ? wallpaperId.slice(4) : '');
+  }, [wallpaperId]);
 
   return (
     <div className="settings-section">
@@ -202,6 +209,35 @@ function AppearanceSection({ activeDesktop }: { activeDesktop: Desktop | null })
               <span className="wallpaper-swatch__label">{wallpaper.name}</span>
             </button>
           ))}
+        </div>
+        <div className="settings-row">
+          <div className="settings-row__text">
+            <h3>图床壁纸</h3>
+            <p>把图床（cfimg）里图片的直链贴进来，即可设为当前桌面壁纸。图片存在图床、本站只记链接。</p>
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, padding: '0 2px 4px' }}>
+          <input
+            type="url"
+            value={imgbedUrl}
+            onChange={(event) => setImgbedUrl(event.target.value)}
+            placeholder="https://cfimg.pages.dev/file/…"
+            style={{
+              flex: 1, minWidth: 0, height: 34, borderRadius: 9, padding: '0 11px', fontSize: 12.5,
+              border: '1px solid rgb(127 140 180 / 30%)', background: 'rgb(127 140 180 / 10%)',
+              color: 'inherit', outline: 'none',
+            }}
+          />
+          <button
+            type="button"
+            className="chip"
+            disabled={!activeDesktop || !/^https:\/\//.test(imgbedUrl.trim())}
+            onClick={() => {
+              if (activeDesktop) setDesktopWallpaper(activeDesktop.id, `url:${imgbedUrl.trim()}`);
+            }}
+          >
+            用于当前桌面
+          </button>
         </div>
         <div className="settings-row" style={{ borderBottom: 0 }}>
           <div className="settings-row__text">
