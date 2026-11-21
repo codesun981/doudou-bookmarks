@@ -67,7 +67,7 @@ function gatePage(error = '') {
   const shake = error ? ' shake' : '';
   const html = `<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>豆豆书签</title><link rel="icon" type="image/png" href="/logo.png">
+<title>我的站点</title><link rel="icon" type="image/png" href="/logo.png">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { height: 100%; }
@@ -430,7 +430,7 @@ async function buildTree(env) {
   for (const s of siteRows.results || []) {
     ensure(s.catelog).children.push({ id: String(s.id), title: s.name, url: s.url, desc: s.desc || '', tag: s.tag || '', deploy: s.deploy || '', links: parseLinks(s.links) });
   }
-  return [{ id: 'root', title: '豆豆书签', children: [...folders.values()] }];
+  return [{ id: 'root', title: '我的站点', children: [...folders.values()] }];
 }
 async function serveIndex(request, env) {
   const res = await env.ASSETS.fetch(new Request(new URL('/newtab.html', request.url), { method: 'GET' }));

@@ -265,8 +265,8 @@ export function SinglePage() {
     <div className="single-page" ref={pageRef} onScroll={handleScroll}>
       <div className="single-page__head">
         <div>
-          <h1 className="single-page__title">豆豆书签</h1>
-          <p className="single-page__sub">自家服务全览 · {visibleItems.length} 个书签 · 拖动可排序、跨区拖动改分类</p>
+          <h1 className="single-page__title">我的站点</h1>
+          <p className="single-page__sub">{visibleItems.length} 个书签 · 按部署平台分类 · 拖动可排序、跨区拖动改分类</p>
         </div>
         <Segmented
           label="书签显示方式"
