@@ -6,6 +6,8 @@ export type WallpaperId = 'sunny' | 'forest' | 'avenue' | 'braid' | 'bokeh' | 'h
 export type Appearance = 'light';
 export type BookmarkColumns = 1 | 2 | 3 | 4 | 5;
 export type BookmarkViewMode = 'icons' | 'cards';
+/** 多链接书签的卡片点击行为：choose=弹窗选入口，primary=直达主链接。 */
+export type MultiLinkClick = 'choose' | 'primary';
 
 export interface AppSettings {
   schemaVersion: number;
@@ -21,4 +23,7 @@ export interface AppSettings {
   bookmarkViewMode: BookmarkViewMode;
   showDesktopDots: boolean;
   onboarded: boolean;
+  multiLinkClick: MultiLinkClick;
+  multiLinkQuickButton: boolean;
+  preloadWallpapers: boolean;
 }

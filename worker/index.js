@@ -200,13 +200,32 @@ async function serveIcon(request, env, ctx) {
 }
 
 
+// ---- 多链接（2026-11-21）：一条书签 = 一个服务，url 为主链接，links 存副链接组 [{label,url}] ----
+function parseLinks(raw) {
+  try {
+    const a = typeof raw === 'string' ? JSON.parse(raw || '[]') : raw;
+    if (!Array.isArray(a)) return [];
+    return a
+      .filter((x) => x && typeof x.url === 'string' && /^https?:\/\//i.test(x.url))
+      .map((x) => ({ label: String(x.label || '').slice(0, 30), url: String(x.url) }))
+      .slice(0, 10);
+  } catch { return []; }
+}
+function linksJson(v, fallbackRaw) {
+  if (v === undefined) return fallbackRaw || '[]';
+  return JSON.stringify(parseLinks(v));
+}
+
 // ---- 书签/分类 CRUD（设置页「书签管理」与日后 COCO 代管共用） ----
 async function adminData(env) {
   const [sites, cats] = await Promise.all([
-    env.DB.prepare('SELECT id, name, url, desc, tag, logo, catelog, sort_order, in_dock FROM sites ORDER BY catelog, sort_order ASC, id ASC').all(),
+    env.DB.prepare('SELECT id, name, url, desc, tag, links, logo, catelog, sort_order, in_dock FROM sites ORDER BY catelog, sort_order ASC, id ASC').all(),
     env.DB.prepare('SELECT catelog, sort_order FROM category_orders ORDER BY sort_order ASC').all(),
   ]);
-  return { sites: sites.results || [], categories: cats.results || [] };
+  return {
+    sites: (sites.results || []).map((s) => ({ ...s, links: parseLinks(s.links) })),
+    categories: cats.results || [],
+  };
 }
 async function readJsonBody(request) {
   try { return await request.json(); } catch { return {}; }
@@ -220,8 +239,8 @@ async function handleApi(request, env, path) {
     const catelog = String(b.catelog || '').trim();
     if (!name || !url || !catelog) return json({ error: 'name/url/catelog 必填' }, 400);
     const max = await env.DB.prepare('SELECT COALESCE(MAX(sort_order), 0) AS m FROM sites WHERE catelog = ?').bind(catelog).first();
-    const r = await env.DB.prepare('INSERT INTO sites (name, url, desc, tag, logo, catelog, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .bind(name, url, String(b.desc || ''), String(b.tag || ''), b.logo ? String(b.logo) : null, catelog, (max?.m || 0) + 10).run();
+    const r = await env.DB.prepare('INSERT INTO sites (name, url, desc, tag, links, logo, catelog, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind(name, url, String(b.desc || ''), String(b.tag || ''), linksJson(b.links), b.logo ? String(b.logo) : null, catelog, (max?.m || 0) + 10).run();
     return json({ ok: true, id: r.meta.last_row_id });
   }
   const bm = path.match(/^\/api\/bookmarks\/(\d+)$/);
@@ -229,8 +248,8 @@ async function handleApi(request, env, path) {
     const b = await readJsonBody(request);
     const cur = await env.DB.prepare('SELECT * FROM sites WHERE id = ?').bind(bm[1]).first();
     if (!cur) return json({ error: 'not found' }, 404);
-    await env.DB.prepare('UPDATE sites SET name = ?, url = ?, desc = ?, tag = ?, catelog = ?, sort_order = ? WHERE id = ?')
-      .bind(String(b.name ?? cur.name), String(b.url ?? cur.url), String(b.desc ?? cur.desc ?? ''), String(b.tag ?? cur.tag ?? ''), String(b.catelog ?? cur.catelog), Number(b.sort_order ?? cur.sort_order), bm[1]).run();
+    await env.DB.prepare('UPDATE sites SET name = ?, url = ?, desc = ?, tag = ?, links = ?, catelog = ?, sort_order = ? WHERE id = ?')
+      .bind(String(b.name ?? cur.name), String(b.url ?? cur.url), String(b.desc ?? cur.desc ?? ''), String(b.tag ?? cur.tag ?? ''), linksJson(b.links, cur.links), String(b.catelog ?? cur.catelog), Number(b.sort_order ?? cur.sort_order), bm[1]).run();
     return json({ ok: true });
   }
   if (bm && request.method === 'DELETE') {
@@ -377,7 +396,12 @@ async function serveWallpaper(env) {
     const obj = await env.WALLPAPER.get('wallpaper_custom');
     if (obj) {
       return new Response(obj.body, {
-        headers: { 'Content-Type': (obj.httpMetadata && obj.httpMetadata.contentType) || 'image/jpeg', 'Cache-Control': 'public, max-age=3600' },
+        headers: {
+          'Content-Type': (obj.httpMetadata && obj.httpMetadata.contentType) || 'image/jpeg',
+          // 2026-11-21：自定义壁纸长缓存（7 天）+ ETag，过期后走协商缓存校验，不再每小时重拉整图
+          'Cache-Control': 'public, max-age=604800',
+          ...(obj.httpEtag ? { ETag: obj.httpEtag } : {}),
+        },
       });
     }
   } catch { /* 读 R2 失败时回退默认壁纸 */ }
@@ -386,7 +410,7 @@ async function serveWallpaper(env) {
 // D1 书签 → GlassDesk 的 BookmarkNode 树：根 → 分类文件夹 → 书签叶子
 async function buildTree(env) {
   const orderRows = await env.DB.prepare('SELECT catelog, sort_order FROM category_orders ORDER BY sort_order ASC').all();
-  const siteRows = await env.DB.prepare('SELECT id, name, url, desc, tag, logo, catelog, sort_order FROM sites ORDER BY sort_order ASC, id ASC').all();
+  const siteRows = await env.DB.prepare('SELECT id, name, url, desc, tag, links, logo, catelog, sort_order FROM sites ORDER BY sort_order ASC, id ASC').all();
   const folders = new Map();
   const ensure = (name) => {
     if (!folders.has(name)) folders.set(name, { id: `cat:${name}`, title: name, children: [] });
@@ -394,7 +418,7 @@ async function buildTree(env) {
   };
   for (const r of orderRows.results || []) ensure(r.catelog);
   for (const s of siteRows.results || []) {
-    ensure(s.catelog).children.push({ id: String(s.id), title: s.name, url: s.url, desc: s.desc || '', tag: s.tag || '' });
+    ensure(s.catelog).children.push({ id: String(s.id), title: s.name, url: s.url, desc: s.desc || '', tag: s.tag || '', links: parseLinks(s.links) });
   }
   return [{ id: 'root', title: '豆豆书签', children: [...folders.values()] }];
 }

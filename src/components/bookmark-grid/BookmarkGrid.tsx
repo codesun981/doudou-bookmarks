@@ -17,6 +17,7 @@ import {
 import type { CSSProperties, DragEvent, MouseEvent } from 'react';
 import type { BookmarkView } from '../../stores/desktop-store';
 import {
+  addBookmarkToDesktop,
   moveBookmarkToDesktop,
   removeBookmarkFromDesktop,
   reimportBookmarks,
@@ -27,6 +28,8 @@ import {
   useWorkspace,
   workspaceStore,
 } from '../../stores/desktop-store';
+import { LinksEditor, cleanLinks } from './LinksEditor';
+import type { BookmarkLink } from '../../types/bookmark';
 import { useStore } from '../../stores/create-store';
 import { patchSettings, useSettings } from '../../stores/settings-store';
 import { setSettingsOpen, pushToast } from '../../stores/ui-store';
@@ -64,6 +67,7 @@ export function BookmarkGrid() {
   const [dropTarget, setDropTarget] = useState<{ id: string; after: boolean } | null>(null);
   const [context, setContext] = useState<ContextState | null>(null);
   const [editTarget, setEditTarget] = useState<BookmarkView | null>(null);
+  const [linkTarget, setLinkTarget] = useState<BookmarkView | null>(null);
   const [creating, setCreating] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [folderStack, setFolderStack] = useState<string[]>([]);
@@ -168,6 +172,34 @@ export function BookmarkGrid() {
     await reimportBookmarks();
     setRefreshing(false);
   }
+
+  /** 云端模式彻底删除书签：删 D1 记录 + 摘掉 Dock 固定，桌面由同步自动剪除。 */
+  async function handleDeleteBookmark(view: BookmarkView) {
+    try {
+      const res = await fetch(`/api/bookmarks/${view.id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (settings.dockPinnedBookmarkIds.includes(view.id)) {
+        patchSettings({
+          dockPinnedBookmarkIds: settings.dockPinnedBookmarkIds.filter((id) => id !== view.id),
+        });
+      }
+      await reimportBookmarks();
+      pushToast('书签已删除。', 'success');
+    } catch {
+      pushToast('删除失败，请重试。', 'error');
+    }
+  }
+
+  const libraryItems = isServerMode()
+    ? [...workspace.liveBookmarks.values()]
+        .filter((meta) => !desktop.bookmarkIds.includes(meta.id))
+        .map((meta) => ({
+          id: meta.id,
+          title: meta.title,
+          url: meta.url,
+          catelog: meta.path[0] ?? '',
+        }))
+    : [];
 
   const others = workspace.desktops.filter((item) => item.id !== desktop.id);
 
@@ -302,6 +334,7 @@ export function BookmarkGrid() {
                 onDragOver={handleDragOver}
                 onDrop={handleDrop}
                 onContextMenu={openContext}
+                onChooseLinks={(v) => setLinkTarget(v)}
               />
             ),
           )}
@@ -350,7 +383,14 @@ export function BookmarkGrid() {
           onEdit={
             isServerMode() ? () => setEditTarget(context.view) : undefined
           }
+          onDelete={
+            isServerMode() ? () => void handleDeleteBookmark(context.view) : undefined
+          }
         />
+      ) : null}
+
+      {linkTarget ? (
+        <LinkChooserModal view={linkTarget} onClose={() => setLinkTarget(null)} />
       ) : null}
 
       {editTarget ? (
@@ -367,6 +407,11 @@ export function BookmarkGrid() {
           categories={[desktop.name, ...others.map((o) => o.name)]}
           defaultCategory={desktop.name}
           onClose={() => setCreating(false)}
+          libraryItems={libraryItems}
+          onPickLibrary={(id) => {
+            addBookmarkToDesktop(desktop.id, id);
+            setCreating(false);
+          }}
         />
       ) : null}
     </section>
@@ -440,6 +485,7 @@ interface BookmarkContextMenuProps {
   pinned: boolean;
   onClose: () => void;
   onEdit?: () => void;
+  onDelete?: () => void;
 }
 
 function BookmarkContextMenu({
@@ -449,7 +495,9 @@ function BookmarkContextMenu({
   pinned,
   onClose,
   onEdit,
+  onDelete,
 }: BookmarkContextMenuProps) {
+  const [armDelete, setArmDelete] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
@@ -527,6 +575,27 @@ function BookmarkContextMenu({
         <ArrowSquareOut size={14} />
         在新标签页打开
       </button>
+      {view.links?.length ? (
+        <>
+          <div className="context-menu__sep" />
+          <div className="context-menu__label">其他入口</div>
+          {view.links.map((link) => (
+            <button
+              key={link.url}
+              type="button"
+              className="context-menu__item"
+              role="menuitem"
+              onClick={() => {
+                onClose();
+                openUrl(link.url, true);
+              }}
+            >
+              <ArrowSquareOut size={14} />
+              {link.label || prettyUrl(link.url)}
+            </button>
+          ))}
+        </>
+      ) : null}
       {onEdit ? (
         <button
           type="button"
@@ -593,6 +662,25 @@ function BookmarkContextMenu({
         <Trash size={14} />
         从桌面移除
       </button>
+      {onDelete ? (
+        <button
+          type="button"
+          className="context-menu__item context-menu__item--danger"
+          role="menuitem"
+          disabled={view.missing}
+          onClick={() => {
+            if (armDelete) {
+              onDelete();
+              onClose();
+            } else {
+              setArmDelete(true);
+            }
+          }}
+        >
+          <Trash size={14} />
+          {armDelete ? '确认删除？将从书签库彻底删除' : '删除书签'}
+        </button>
+      ) : null}
       <button
         type="button"
         className="context-menu__item"
@@ -615,25 +703,87 @@ function BookmarkContextMenu({
 }
 
 
+/** 多链接书签的入口选择弹窗：主链接 + 全部副链接，点哪个开哪个（新标签）。 */
+function LinkChooserModal({ view, onClose }: { view: BookmarkView; onClose: () => void }) {
+  const entries: Array<{ label: string; url: string; primary: boolean }> = [
+    { label: '主链接', url: view.url, primary: true },
+    ...(view.links ?? []).map((link) => ({
+      label: link.label || prettyUrl(link.url),
+      url: link.url,
+      primary: false,
+    })),
+  ];
+  return (
+    <Modal open onClose={onClose} label={`选择入口：${view.title}`} className="modal--confirm">
+      <div className="link-chooser">
+        <h3 className="modal__title">{view.title}</h3>
+        <p className="link-chooser__hint">这个服务有 {entries.length} 个入口，点一个打开：</p>
+        {entries.map((entry) => (
+          <button
+            key={entry.url}
+            type="button"
+            className="link-chooser__row"
+            onClick={() => {
+              openUrl(entry.url, true);
+              onClose();
+            }}
+          >
+            <span className="link-chooser__label">
+              {entry.label}
+              {entry.primary ? <span className="link-chooser__badge">主</span> : null}
+            </span>
+            <span className="link-chooser__url">{prettyUrl(entry.url)}</span>
+            <ArrowSquareOut size={15} />
+          </button>
+        ))}
+      </div>
+    </Modal>
+  );
+}
+
+interface LibraryItem {
+  id: string;
+  title: string;
+  url: string;
+  catelog: string;
+}
+
 /** 云端模式下就地编辑单个书签：名称 / 网址 / 备注 / 分类，保存走 /api/bookmarks PUT 并重拉书签树。 */
 function BookmarkEditModal({
   view,
   categories,
   defaultCategory,
   onClose,
+  libraryItems,
+  onPickLibrary,
 }: {
   view: BookmarkView | null;
   categories: string[];
   defaultCategory?: string;
   onClose: () => void;
+  libraryItems?: LibraryItem[];
+  onPickLibrary?: (id: string) => void;
 }) {
   const [name, setName] = useState(view?.title ?? '');
   const [url, setUrl] = useState(view?.url ?? '');
   const [desc, setDesc] = useState(view?.desc ?? '');
   const [tag, setTag] = useState(view?.tag ?? '');
+  const [links, setLinks] = useState<BookmarkLink[]>(view?.links ?? []);
   const [catelog, setCatelog] = useState(view?.path[0] ?? defaultCategory ?? categories[0] ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [tab, setTab] = useState<'new' | 'library'>('new');
+  const [libQuery, setLibQuery] = useState('');
+  const showTabs = !view && Boolean(libraryItems) && Boolean(onPickLibrary);
+  const libFiltered = (libraryItems ?? []).filter((item) => {
+    const q = libQuery.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      item.title.toLowerCase().includes(q) ||
+      item.url.toLowerCase().includes(q) ||
+      item.catelog.toLowerCase().includes(q)
+    );
+  });
 
   const save = async () => {
     if (busy) return;
@@ -646,7 +796,7 @@ function BookmarkEditModal({
     setBusy(true);
     setError('');
     try {
-      const payload = JSON.stringify({ name: n, url: u, desc: desc.trim(), tag: tag.trim(), catelog });
+      const payload = JSON.stringify({ name: n, url: u, desc: desc.trim(), tag: tag.trim(), links: cleanLinks(links), catelog });
       const res = view
         ? await fetch(`/api/bookmarks/${view.id}`, {
             method: 'PUT',
@@ -670,6 +820,65 @@ function BookmarkEditModal({
 
   return (
     <Modal open onClose={onClose} label={view ? `编辑书签：${view.title}` : '添加书签'} className="modal--confirm">
+      {showTabs ? (
+        <div className="bookmark-edit__tabs" role="tablist" aria-label="添加方式">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'new'}
+            className="bookmark-edit__tab"
+            data-active={tab === 'new'}
+            onClick={() => setTab('new')}
+          >
+            新建书签
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'library'}
+            className="bookmark-edit__tab"
+            data-active={tab === 'library'}
+            onClick={() => setTab('library')}
+          >
+            从书签库添加
+          </button>
+        </div>
+      ) : null}
+      {showTabs && tab === 'library' ? (
+        <div className="lib-picker">
+          <h3 className="modal__title bookmark-edit__title">从书签库添加</h3>
+          <input
+            className="lib-picker__search"
+            value={libQuery}
+            onChange={(e) => setLibQuery(e.target.value)}
+            placeholder="搜索书签库（不在当前桌面的）"
+            autoFocus
+          />
+          <div className="lib-picker__list">
+            {libFiltered.length === 0 ? (
+              <p className="lib-picker__empty">没有可添加的书签（库里的都已经在这个桌面上了）。</p>
+            ) : (
+              libFiltered.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className="lib-picker__row"
+                  onClick={() => onPickLibrary?.(item.id)}
+                >
+                  <span className="lib-picker__name">{item.title}</span>
+                  {item.catelog ? <span className="lib-picker__cat">{item.catelog}</span> : null}
+                  <span className="lib-picker__url">{prettyUrl(item.url)}</span>
+                </button>
+              ))
+            )}
+          </div>
+          <div className="modal__actions">
+            <button type="button" className="btn btn--glass btn--small" onClick={onClose}>
+              关闭
+            </button>
+          </div>
+        </div>
+      ) : (
       <form
         className="bookmark-edit"
         onSubmit={(event) => {
@@ -694,6 +903,10 @@ function BookmarkEditModal({
           <span>标签（卡片上显示，可空）</span>
           <input value={tag} onChange={(e) => setTag(e.target.value)} placeholder="如：面板 / 代理 / 博客" maxLength={20} />
         </label>
+        <div className="bookmark-edit__field">
+          <span>副链接（同一服务的其他入口，可空）</span>
+          <LinksEditor links={links} onChange={setLinks} />
+        </div>
         <label className="bookmark-edit__field">
           <span>分类</span>
           <select value={catelog} onChange={(e) => setCatelog(e.target.value)}>
@@ -714,6 +927,7 @@ function BookmarkEditModal({
           </button>
         </div>
       </form>
+      )}
     </Modal>
   );
 }

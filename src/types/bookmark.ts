@@ -1,3 +1,9 @@
+/** 多链接书签的副链接（主链接仍是书签自身的 url）。 */
+export interface BookmarkLink {
+  label: string;
+  url: string;
+}
+
 export interface BookmarkNode {
   id: string;
   parentId?: string;
@@ -5,6 +11,7 @@ export interface BookmarkNode {
   url?: string;
   desc?: string;
   tag?: string;
+  links?: BookmarkLink[];
   children?: BookmarkNode[];
   dateAdded?: number;
 }
@@ -25,6 +32,7 @@ export interface BookmarkItemView {
   /** 站点备注（服务端模式来自 D1 sites.desc）。 */
   desc?: string;
   tag?: string;
+  links?: BookmarkLink[];
 }
 
 export interface BookmarkMeta {
@@ -35,6 +43,7 @@ export interface BookmarkMeta {
   path: string[];
   desc?: string;
   tag?: string;
+  links?: BookmarkLink[];
   dateAdded?: number;
 }
 
@@ -54,6 +63,7 @@ export interface BookmarkCacheEntry {
   path: string[];
   desc?: string;
   tag?: string;
+  links?: BookmarkLink[];
   cachedAt: number;
 }
 

@@ -147,6 +147,7 @@ export function resolveBookmarkView(state: WorkspaceState, id: string): Bookmark
       path: live.path,
       desc: live.desc,
       tag: live.tag,
+      links: live.links,
       missing: false,
     };
   }
@@ -162,6 +163,7 @@ export function resolveBookmarkView(state: WorkspaceState, id: string): Bookmark
       path: cached.path,
       desc: cached.desc,
       tag: cached.tag,
+      links: cached.links,
       missing: true,
     };
   }
@@ -541,6 +543,38 @@ export function moveBookmarkToDesktop(
   pushToast(`已移动到「${target.name}」`, 'success');
 }
 
+/** 把书签库里已有的书签放到某个桌面（恢复「从桌面移除」的书签用）。 */
+export function addBookmarkToDesktop(desktopId: string, bookmarkId: string): void {
+  const state = workspaceStore.getState();
+  const target = state.desktops.find((item) => item.id === desktopId);
+  if (!target || target.bookmarkIds.includes(bookmarkId)) return;
+  const now = Date.now();
+  const desktops = state.desktops.map((item) =>
+    item.id === desktopId
+      ? { ...item, bookmarkIds: [...item.bookmarkIds, bookmarkId], updatedAt: now }
+      : item,
+  );
+  workspaceStore.setState({ desktops });
+  void storageService
+    .mutateKey<DesktopLayout>(STORAGE_KEYS.desktopLayout, (current) =>
+      current
+        ? {
+            ...current,
+            desktops: current.desktops.map((item) =>
+              item.id === desktopId
+                ? { ...item, bookmarkIds: [...item.bookmarkIds.filter((id) => id !== bookmarkId), bookmarkId], updatedAt: now }
+                : item,
+            ),
+          }
+        : undefined,
+    )
+    .catch(reportPersistenceError);
+  void storageService
+    .mutateKey<BookmarkLayout[]>(STORAGE_KEYS.bookmarkLayout, () => deriveBookmarkLayout(desktops))
+    .catch(reportPersistenceError);
+  pushToast(`已放到「${target.name}」桌面。`, 'success');
+}
+
 export function removeBookmarkFromDesktop(desktopId: string, bookmarkId: string): void {
   const state = workspaceStore.getState();
   const desktop = state.desktops.find((item) => item.id === desktopId);
@@ -572,7 +606,12 @@ export function removeBookmarkFromDesktop(desktopId: string, bookmarkId: string)
   void storageService
     .mutateKey<BookmarkLayout[]>(STORAGE_KEYS.bookmarkLayout, () => deriveBookmarkLayout(desktops))
     .catch(reportPersistenceError);
-  pushToast('已从桌面移除，浏览器书签没有改变。', 'success');
+  pushToast(
+    isServerMode()
+      ? '已从桌面移除（书签本体还在书签库里，可在设置中放回桌面）。'
+      : '已从桌面移除，浏览器书签没有改变。',
+    'success',
+  );
 }
 
 export function cleanupMissingBookmarks(): void {

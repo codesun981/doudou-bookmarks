@@ -64,6 +64,16 @@ const BASE_WALLPAPERS: WallpaperPreset[] = SOURCES.map((source) => ({
 
 export const WALLPAPERS: WallpaperPreset[] = BASE_WALLPAPERS;
 
+/** 壁纸的原始图片 URL（预加载用）：预设 → /wallpapers/<file>，url: → 直链本身。 */
+export function wallpaperImageUrl(id: WallpaperId | undefined): string | null {
+  if (typeof id === 'string' && id.startsWith('url:')) {
+    const url = id.slice(4);
+    return /^https:\/\//.test(url) ? url : null;
+  }
+  const source = SOURCES.find((s) => s.id === id) ?? SOURCES[0]!;
+  return `/wallpapers/${source.file}`;
+}
+
 export function getWallpaper(id: WallpaperId | undefined): WallpaperPreset {
   // 图床壁纸（fork）：id 形如 'url:https://cfimg.pages.dev/file/xxx.jpg'，直接合成预设。
   if (typeof id === 'string' && id.startsWith('url:')) {

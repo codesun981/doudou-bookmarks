@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { bootstrapWorkspace } from '../features/desktops/bootstrap';
-import { getWallpaper } from '../features/layout/wallpapers';
+import { getWallpaper, wallpaperImageUrl } from '../features/layout/wallpapers';
+import { useStore } from '../stores/create-store';
 import {
   setActiveDesktop,
   useActiveDesktop,
@@ -81,6 +82,37 @@ export function App() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [status]);
+
+  // 壁纸预加载（2026-11-21）：就绪后趁空闲把所有桌面的壁纸图拉进浏览器缓存，
+  // 切桌面时不再现下载现解码。关掉设置里的「预加载全部壁纸」即停。
+  const desktops = useStore(workspaceStore, (state) => state.desktops);
+  useEffect(() => {
+    if (status !== 'ready' || !settings.preloadWallpapers) return;
+    const ids = new Set<string>([settings.defaultWallpaper]);
+    desktops.forEach((d) => {
+      if (d.wallpaper) ids.add(d.wallpaper);
+    });
+    const urls = [...ids]
+      .map((id) => wallpaperImageUrl(id))
+      .filter((u): u is string => Boolean(u));
+    if (urls.length === 0) return;
+    const run = () => {
+      urls.forEach((u) => {
+        const img = new Image();
+        img.src = u;
+      });
+    };
+    const w = window as unknown as {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+      cancelIdleCallback?: (h: number) => void;
+    };
+    if (w.requestIdleCallback) {
+      const handle = w.requestIdleCallback(run, { timeout: 3000 });
+      return () => w.cancelIdleCallback?.(handle);
+    }
+    const timer = window.setTimeout(run, 1200);
+    return () => window.clearTimeout(timer);
+  }, [status, settings.preloadWallpapers, settings.defaultWallpaper, desktops]);
 
   const ready = status === 'ready';
 

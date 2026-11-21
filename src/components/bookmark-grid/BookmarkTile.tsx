@@ -1,7 +1,9 @@
 import type { CSSProperties, DragEvent, KeyboardEvent, MouseEvent } from 'react';
-import { WarningCircle } from '@phosphor-icons/react';
+import { ArrowSquareOut, List, WarningCircle } from '@phosphor-icons/react';
 import type { BookmarkView } from '../../stores/desktop-store';
 import { useFavicon } from '../../hooks/use-favicon';
+import { useSettings } from '../../stores/settings-store';
+import { openUrl } from '../../services/browser-api';
 import { prettyUrl, siteHue, siteLetter } from '../../utils/url';
 
 interface BookmarkTileProps {
@@ -19,6 +21,8 @@ interface BookmarkTileProps {
     view: BookmarkView,
     event: MouseEvent<HTMLElement> | { x: number; y: number },
   ) => void;
+  /** 多链接书签：打开入口选择弹窗（桌面网格传入；文件夹视图不传则维持直达）。 */
+  onChooseLinks?: (view: BookmarkView) => void;
 }
 
 export function BookmarkTile({
@@ -33,7 +37,11 @@ export function BookmarkTile({
   onDragOver,
   onDrop,
   onContextMenu,
+  onChooseLinks,
 }: BookmarkTileProps) {
+  const settings = useSettings();
+  const multi = !view.missing && (view.links?.length ?? 0) > 0;
+  const chooseMode = settings.multiLinkClick === 'choose';
   const hue = siteHue(view.url, view.title);
   const favicon = useFavicon(view.missing ? null : view.url, 128);
   const hasFavicon = Boolean(favicon.src && !favicon.failed);
@@ -103,7 +111,7 @@ export function BookmarkTile({
         )}
         {!view.missing ? (
           <span className="bookmark-badge" aria-hidden="true">
-            ↗
+            {multi ? `+${view.links!.length}` : '↗'}
           </span>
         ) : null}
       </span>
@@ -145,6 +153,9 @@ export function BookmarkTile({
           <span className="bookmark-card__name">{view.title}</span>
           {pinned ? <span className="bookmark-card__pin" aria-label="已钉在 Dock" /> : null}
           {view.tag ? <span className="bookmark-card__tag">{view.tag}</span> : null}
+          {multi ? (
+            <span className="bookmark-card__multi">{view.links!.length + 1} 个入口</span>
+          ) : null}
         </span>
         {!view.missing ? (
           <span className="bookmark-card__url">{prettyUrl(view.url)}</span>
@@ -153,6 +164,22 @@ export function BookmarkTile({
         )}
         {view.desc ? <span className="bookmark-card__desc">{view.desc}</span> : null}
       </span>
+      {multi && settings.multiLinkQuickButton ? (
+        <button
+          type="button"
+          className="bookmark-card__quick"
+          title={chooseMode ? '直达主链接（不弹窗）' : '选择入口'}
+          aria-label={chooseMode ? `直达${view.title}主链接` : `选择${view.title}的入口`}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (chooseMode) openUrl(view.url, true);
+            else onChooseLinks?.(view);
+          }}
+        >
+          {chooseMode ? <ArrowSquareOut size={14} /> : <List size={14} />}
+        </button>
+      ) : null}
     </>
   );
 
@@ -190,6 +217,13 @@ export function BookmarkTile({
       target="_blank"
       rel="noopener noreferrer"
       data-desktop-id={desktopId}
+      onClick={(event) => {
+        // 多链接 + 「弹窗选择」模式：整卡点击改为打开入口选择弹窗，不直达
+        if (multi && chooseMode && onChooseLinks) {
+          event.preventDefault();
+          onChooseLinks(view);
+        }
+      }}
     >
       {variant === 'card' ? cardContent : content}
     </a>

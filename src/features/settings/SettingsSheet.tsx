@@ -546,6 +546,16 @@ function AppearanceSection({ activeDesktop }: { activeDesktop: Desktop | null })
           </div>
           <span className="chip">{activeDesktop?.name ?? '没有桌面'}</span>
         </div>
+        <SettingRow
+          title="预加载全部壁纸"
+          description="打开页面后趁空闲把每个桌面的壁纸提前下载到浏览器缓存，切换桌面时背景立即显示、不再现拉现等。流量敏感时可关。"
+        >
+          <Switch
+            label="预加载全部壁纸"
+            checked={settings.preloadWallpapers}
+            onChange={(checked) => patchSettings({ preloadWallpapers: checked })}
+          />
+        </SettingRow>
       </div>
 
       <div className="settings-group">
@@ -667,6 +677,36 @@ function DesktopsSection() {
           <span>
             当前没有书签权限。桌面和小组件仍可使用，但无法读取新的书签。请在浏览器扩展管理页确认权限。
           </span>
+        </div>
+      ) : null}
+
+      {isServerMode() ? (
+        <div className="settings-group">
+          <div className="settings-group__title">多链接书签</div>
+          <SettingRow
+            title="卡片点击行为"
+            description="带副链接的书签（一服务多入口）：「弹窗选择」点卡片先列出全部入口再选；「直达主链接」点卡片直接打开主链接。"
+          >
+            <Segmented
+              label="多链接卡片点击行为"
+              value={settings.multiLinkClick}
+              options={[
+                { value: 'choose', label: '弹窗选择' },
+                { value: 'primary', label: '直达主链接' },
+              ]}
+              onChange={(value) => patchSettings({ multiLinkClick: value })}
+            />
+          </SettingRow>
+          <SettingRow
+            title="卡片快捷按钮"
+            description="多链接卡片右上角的小按钮：弹窗模式下它直达主链接，直达模式下它打开入口选择弹窗。"
+          >
+            <Switch
+              label="显示卡片快捷按钮"
+              checked={settings.multiLinkQuickButton}
+              onChange={(checked) => patchSettings({ multiLinkQuickButton: checked })}
+            />
+          </SettingRow>
         </div>
       ) : null}
 

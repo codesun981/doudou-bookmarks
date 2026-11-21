@@ -31,6 +31,7 @@ export function indexBookmarks(roots: BookmarkNode[]): Map<string, BookmarkMeta>
           path: folderPath,
           ...(node.desc ? { desc: node.desc } : {}),
           ...(node.tag ? { tag: node.tag } : {}),
+          ...(node.links?.length ? { links: node.links } : {}),
           ...(node.dateAdded ? { dateAdded: node.dateAdded } : {}),
         });
       }
