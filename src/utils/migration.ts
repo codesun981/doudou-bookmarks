@@ -397,6 +397,7 @@ function sanitizeBookmarkCache(raw: unknown, issues: string[]): Record<string, B
         ? entry.path.filter((part): part is string => typeof part === 'string').slice(0, 12)
         : [],
       desc: asCleanString(entry.desc, 300),
+      tag: asCleanString(entry.tag, 40),
       cachedAt: asPositiveNumber(entry.cachedAt, Date.now()),
     };
     count++;

@@ -146,6 +146,7 @@ export function resolveBookmarkView(state: WorkspaceState, id: string): Bookmark
       url: live.url,
       path: live.path,
       desc: live.desc,
+      tag: live.tag,
       missing: false,
     };
   }
@@ -160,6 +161,7 @@ export function resolveBookmarkView(state: WorkspaceState, id: string): Bookmark
       url: cached.url,
       path: cached.path,
       desc: cached.desc,
+      tag: cached.tag,
       missing: true,
     };
   }

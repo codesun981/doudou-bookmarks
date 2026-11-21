@@ -151,7 +151,7 @@ export async function bootstrapWorkspace(): Promise<void> {
     notes = base.notes;
     countdowns = base.countdowns;
     pomodoro = base.pomodoro;
-    settings = { ...base.settings, defaultWallpaper: 'doudou' };
+    settings = { ...base.settings, defaultWallpaper: 'forest' };
     cache = { ...cache, ...buildBookmarkCache(loaded.tree) };
     seeded = true;
     layoutChanged = true;

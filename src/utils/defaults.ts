@@ -11,7 +11,7 @@ import type { NoteColor, PomodoroState } from '../types/widget';
 import { DEFAULT_SEARCH_ENGINE, SCHEMA_VERSION } from './constants';
 
 export const SEARCH_ENGINE_IDS: SearchEngineId[] = ['bing', 'google', 'baidu', 'duckduckgo'];
-export const WALLPAPER_IDS: WallpaperId[] = ['sunrise', 'mint', 'dune', 'dusk', 'paper', 'doudou', 'forest', 'lake', 'coast'];
+export const WALLPAPER_IDS: WallpaperId[] = ['sunny', 'forest', 'avenue', 'braid', 'bokeh', 'hill'];
 export const GLASS_INTENSITIES: GlassIntensity[] = ['low', 'medium', 'high'];
 export const SYNC_MODES: BookmarkSyncMode[] = ['import', 'follow'];
 export const NOTE_COLORS: NoteColor[] = ['paper', 'apricot', 'mint', 'lilac'];
@@ -27,7 +27,7 @@ export function createDefaultSettings(overrides: Partial<AppSettings> = {}): App
     bookmarkSyncMode: 'follow',
     dockAutoHide: false,
     searchEngine: DEFAULT_SEARCH_ENGINE,
-    defaultWallpaper: 'dusk',
+    defaultWallpaper: 'forest',
     dockPinnedBookmarkIds: [],
     bookmarkColumns: 2,
     bookmarkViewMode: 'cards',

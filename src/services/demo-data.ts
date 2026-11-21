@@ -107,10 +107,10 @@ interface DemoFolder {
 }
 
 const DEMO_FOLDERS: DemoFolder[] = [
-  { id: 'demo-work', name: '工作', wallpaper: 'dusk' },
-  { id: 'demo-design', name: '设计', wallpaper: 'sunrise' },
+  { id: 'demo-work', name: '工作', wallpaper: 'forest' },
+  { id: 'demo-design', name: '设计', wallpaper: 'sunny' },
   { id: 'demo-read', name: '阅读', wallpaper: 'mint' },
-  { id: 'demo-tools', name: '工具', wallpaper: 'paper' },
+  { id: 'demo-tools', name: '工具', wallpaper: 'hill' },
 ];
 
 export function createDemoSeed(
@@ -176,7 +176,7 @@ export function createDemoSeed(
 
   const settings = createDefaultSettings({
     onboarded: true,
-    defaultWallpaper: 'dusk',
+    defaultWallpaper: 'forest',
     dockPinnedBookmarkIds: [],
     schemaVersion: SCHEMA_VERSION,
   });

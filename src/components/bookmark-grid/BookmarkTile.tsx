@@ -144,6 +144,7 @@ export function BookmarkTile({
         <span className="bookmark-card__title">
           <span className="bookmark-card__name">{view.title}</span>
           {pinned ? <span className="bookmark-card__pin" aria-label="已钉在 Dock" /> : null}
+          {view.tag ? <span className="bookmark-card__tag">{view.tag}</span> : null}
         </span>
         {!view.missing ? (
           <span className="bookmark-card__url">{prettyUrl(view.url)}</span>

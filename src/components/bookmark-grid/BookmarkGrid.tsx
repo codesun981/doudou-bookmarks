@@ -630,6 +630,7 @@ function BookmarkEditModal({
   const [name, setName] = useState(view?.title ?? '');
   const [url, setUrl] = useState(view?.url ?? '');
   const [desc, setDesc] = useState(view?.desc ?? '');
+  const [tag, setTag] = useState(view?.tag ?? '');
   const [catelog, setCatelog] = useState(view?.path[0] ?? defaultCategory ?? categories[0] ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -645,7 +646,7 @@ function BookmarkEditModal({
     setBusy(true);
     setError('');
     try {
-      const payload = JSON.stringify({ name: n, url: u, desc: desc.trim(), catelog });
+      const payload = JSON.stringify({ name: n, url: u, desc: desc.trim(), tag: tag.trim(), catelog });
       const res = view
         ? await fetch(`/api/bookmarks/${view.id}`, {
             method: 'PUT',
@@ -688,6 +689,10 @@ function BookmarkEditModal({
         <label className="bookmark-edit__field">
           <span>备注（卡片视图显示）</span>
           <input value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="一句话说明这个站点" />
+        </label>
+        <label className="bookmark-edit__field">
+          <span>标签（卡片上显示，可空）</span>
+          <input value={tag} onChange={(e) => setTag(e.target.value)} placeholder="如：面板 / 代理 / 博客" maxLength={20} />
         </label>
         <label className="bookmark-edit__field">
           <span>分类</span>
