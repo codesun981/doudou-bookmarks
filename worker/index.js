@@ -1,7 +1,8 @@
 // 豆豆书签（GlassDesk 基座）Worker：整站密码门 + 书签树 API + 布局云存储 + 静态托管。
-// 数据复用星境的 D1（starrealm-db）与 KV（NAV_AUTH）：书签、密码、壁纸零迁移。
+// 数据复用星境的 D1（starrealm-db）与 KV（NAV_AUTH）：书签、密码零迁移。
+// KV 降写改造（2026-11-21，与星境 gate.js 同方案）：门会话改为无状态签名令牌
+// （过期时间.HMAC 签名，密钥取站点密码），图标缓存改 Cache API，壁纸改存 R2。
 const GATE_COOKIE = 'nav_gate_session';
-const GATE_PREFIX = 'gate:';
 const GATE_TTL = 60 * 60 * 24 * 30; // 30 天
 const STORAGE_KEY = 'glassdesk:storage:v1';
 
@@ -26,10 +27,33 @@ function safeEqual(a, b) {
   for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
   return diff === 0;
 }
+function b64urlEncode(bytes) {
+  let bin = '';
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function b64urlDecode(text) {
+  const bin = atob(text.replace(/-/g, '+').replace(/_/g, '/'));
+  return Uint8Array.from(bin, (c) => c.charCodeAt(0));
+}
+async function gateSignKey(env) {
+  const stored = await env.NAV_AUTH.get('site_password');
+  if (!stored) return null;
+  return crypto.subtle.importKey('raw', new TextEncoder().encode(stored), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify']);
+}
 async function validateGate(request, env) {
   const token = parseCookies(request.headers.get('Cookie') || '')[GATE_COOKIE];
   if (!token) return false;
-  return Boolean(await env.NAV_AUTH.get(`${GATE_PREFIX}${token}`));
+  const dot = token.indexOf('.');
+  if (dot < 1) return false;
+  const exp = Number(token.slice(0, dot));
+  if (!Number.isFinite(exp) || exp < Math.floor(Date.now() / 1000)) return false;
+  const key = await gateSignKey(env);
+  if (!key) return false;
+  try {
+    const sig = b64urlDecode(token.slice(dot + 1));
+    return await crypto.subtle.verify('HMAC', key, sig, new TextEncoder().encode(`gate.${exp}`));
+  } catch { return false; }
 }
 function gatePage(error = '') {
   const err = error ? `<p class="error">${error}</p>` : '';
@@ -72,8 +96,11 @@ async function handleGate(request, env) {
   if (!stored) return gatePage('站点密码尚未设置');
   const [a, b] = await Promise.all([sha256Hex(submitted), sha256Hex(stored)]);
   if (!safeEqual(a, b)) return gatePage('密码不对，再试一次');
-  const token = crypto.randomUUID();
-  await env.NAV_AUTH.put(`${GATE_PREFIX}${token}`, JSON.stringify({ createdAt: Date.now() }), { expirationTtl: GATE_TTL });
+  const key = await gateSignKey(env);
+  if (!key) return gatePage('站点密码尚未设置');
+  const exp = Math.floor(Date.now() / 1000) + GATE_TTL;
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`gate.${exp}`));
+  const token = `${exp}.${b64urlEncode(new Uint8Array(sig))}`;
   return new Response(null, {
     status: 302,
     headers: {
@@ -91,8 +118,9 @@ function letterSvg(letter, seedText) {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${c}"/><stop offset="1" stop-color="${c}" stop-opacity="0.72"/></linearGradient></defs><rect width="128" height="128" rx="26" fill="url(#g)"/><text x="64" y="66" font-family="-apple-system, 'PingFang SC', sans-serif" font-size="58" font-weight="600" fill="#fff" text-anchor="middle" dominant-baseline="central">${letter}</text></svg>`;
   return new Response(svg, { headers: { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'public, max-age=604800' } });
 }
-// 站点图标：D1 显式 logo → 站点 apple-touch-icon → favicon.ico → 首字色块（KV 缓存 7 天）
-async function serveIcon(request, env) {
+// 站点图标：D1 显式 logo → 站点 apple-touch-icon → favicon.ico → 首字色块。
+// 缓存走 Cache API（边缘缓存，不计 KV 次数；2026-11-21 由 KV 缓存迁出）。
+async function serveIcon(request, env, ctx) {
   const target = new URL(request.url).searchParams.get('url') || '';
   let page;
   try { page = new URL(target); } catch { return letterSvg('?', target); }
@@ -100,12 +128,10 @@ async function serveIcon(request, env) {
   const row = await env.DB.prepare('SELECT name, logo FROM sites WHERE url = ?').bind(target).first();
   const displayName = row?.name || host;
   if (row?.logo === 'letter') return letterSvg([...displayName][0] || '?', displayName);
-  const cacheKey = `icon:${host}`;
-  const [cached, cachedCt] = await Promise.all([
-    env.NAV_AUTH.get(cacheKey, 'arrayBuffer'),
-    env.NAV_AUTH.get(`${cacheKey}:ct`),
-  ]);
-  if (cached) return new Response(cached, { headers: { 'Content-Type': cachedCt || 'image/png', 'Cache-Control': 'public, max-age=604800' } });
+  const cache = caches.default;
+  const cacheKey = new Request(`https://desk.aioosi.com/icon-cache/${encodeURIComponent(host)}`, { method: 'GET' });
+  const hit = await cache.match(cacheKey);
+  if (hit) return hit;
   const sources = [];
   if (row?.logo && /^https?:\/\//.test(row.logo)) sources.push(row.logo);
   sources.push(`${page.origin}/apple-touch-icon.png`, `${page.origin}/favicon.ico`);
@@ -120,9 +146,9 @@ async function serveIcon(request, env) {
       if (res.ok && ct.startsWith('image/')) {
         const buf = await res.arrayBuffer();
         if (buf.byteLength > 0 && buf.byteLength < 2_000_000) {
-          await env.NAV_AUTH.put(cacheKey, buf, { expirationTtl: 604800 });
-          await env.NAV_AUTH.put(`${cacheKey}:ct`, ct, { expirationTtl: 604800 });
-          return new Response(buf, { headers: { 'Content-Type': ct, 'Cache-Control': 'public, max-age=604800' } });
+          const resp = new Response(buf, { headers: { 'Content-Type': ct, 'Cache-Control': 'public, max-age=604800' } });
+          if (ctx) ctx.waitUntil(cache.put(cacheKey, resp.clone()));
+          return resp;
         }
       }
     } catch { /* 换下一个来源 */ }
@@ -197,11 +223,15 @@ async function handleApi(request, env, path) {
 }
 
 async function serveWallpaper(env) {
-  const [bytes, ct] = await Promise.all([
-    env.NAV_AUTH.get('wallpaper_custom', 'arrayBuffer'),
-    env.NAV_AUTH.get('wallpaper_custom_ct'),
-  ]);
-  if (bytes) return new Response(bytes, { headers: { 'Content-Type': ct || 'image/jpeg', 'Cache-Control': 'public, max-age=3600' } });
+  // 自定义壁纸存 R2（2026-11-21 由 KV 迁出），没有时回退自带蓝图。
+  try {
+    const obj = await env.WALLPAPER.get('wallpaper_custom');
+    if (obj) {
+      return new Response(obj.body, {
+        headers: { 'Content-Type': (obj.httpMetadata && obj.httpMetadata.contentType) || 'image/jpeg', 'Cache-Control': 'public, max-age=3600' },
+      });
+    }
+  } catch { /* 读 R2 失败时回退默认壁纸 */ }
   return new Response(null, { status: 302, headers: { Location: '/wallpapers/deep-blue.jpg' } });
 }
 // D1 书签 → GlassDesk 的 BookmarkNode 树：根 → 分类文件夹 → 书签叶子
@@ -226,7 +256,7 @@ async function serveIndex(request, env) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const path = url.pathname;
     if (path === '/gate') return handleGate(request, env);
@@ -236,7 +266,7 @@ export default {
       if (request.method === 'GET') return new Response(null, { status: 302, headers: { Location: '/gate' } });
       return new Response('需要密码', { status: 401 });
     }
-    if (path === '/api/icon') return serveIcon(request, env);
+    if (path === '/api/icon') return serveIcon(request, env, ctx);
     const apiRes = await handleApi(request, env, path);
     if (apiRes) return apiRes;
     if (path === '/api/tree') return json({ tree: await buildTree(env) });

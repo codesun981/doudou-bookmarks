@@ -1516,9 +1516,11 @@
 .widget--dragging {
   transition: none;
   cursor: grabbing;
+  /* 拖动态投影收紧贴合卡片：原 80px 大模糊在亮壁纸上糊成灰雾，改小半径、深核心，读作「抬起」而非灰影 */
+  border-color: rgb(255 255 255 / 28%);
   box-shadow:
-    0 40px 80px -26px rgb(0 0 0 / 70%),
-    0 6px 18px rgb(0 0 0 / 34%),
+    0 22px 38px -14px rgb(0 0 0 / 66%),
+    0 3px 10px rgb(0 0 0 / 30%),
     inset 0 1px 0 rgb(255 255 255 / 13%);
 }
 
