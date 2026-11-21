@@ -41,6 +41,8 @@ export function createDefaultSettings(overrides: Partial<AppSettings> = {}): App
     multiLinkQuickButton: true,
     preloadWallpapers: true,
     layoutMode: 'single',
+    singleKnownCategories: [],
+    singleExcludedCategories: [],
     ...overrides,
   };
 }

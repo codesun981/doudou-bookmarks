@@ -33,7 +33,7 @@ import type { BookmarkLink } from '../../types/bookmark';
 import { useStore } from '../../stores/create-store';
 import { patchSettings, useSettings } from '../../stores/settings-store';
 import { setSettingsOpen, pushToast } from '../../stores/ui-store';
-import { reorderIds } from '../../features/bookmarks/tree';
+import { categoryOf, reorderIds } from '../../features/bookmarks/tree';
 import { openUrl } from '../../services/browser-api';
 import { prettyUrl } from '../../utils/url';
 import { BookmarkTile } from './BookmarkTile';
@@ -197,7 +197,7 @@ export function BookmarkGrid() {
           id: meta.id,
           title: meta.title,
           url: meta.url,
-          catelog: meta.path[0] ?? '',
+          catelog: categoryOf(meta),
         }))
     : [];
 
@@ -770,7 +770,7 @@ export function BookmarkEditModal({
   const [tag, setTag] = useState(view?.tag ?? '');
   const [deploy, setDeploy] = useState(view?.deploy ?? '');
   const [links, setLinks] = useState<BookmarkLink[]>(view?.links ?? []);
-  const [catelog, setCatelog] = useState(view?.path[0] ?? defaultCategory ?? categories[0] ?? '');
+  const [catelog, setCatelog] = useState(view?.path[view.path.length - 1] ?? defaultCategory ?? categories[0] ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [tab, setTab] = useState<'new' | 'library'>('new');

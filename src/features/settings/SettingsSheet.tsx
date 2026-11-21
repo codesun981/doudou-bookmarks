@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowClockwise,
   ArrowDown,
@@ -35,6 +35,7 @@ import {
   addDesktopFromFolder,
   cleanupMissingBookmarks,
   deleteDesktop,
+  getSearchableBookmarks,
   reimportBookmarks,
   renameDesktop,
   reorderDesktop,
@@ -43,6 +44,8 @@ import {
   useWorkspace,
 } from '../../stores/desktop-store';
 import { patchSettings, useSettings } from '../../stores/settings-store';
+import { PREFERRED_ORDER } from '../../components/single-page/SinglePage';
+import { categoryOf } from '../../features/bookmarks/tree';
 import {
   setSettingsOpen,
   useUiState,
@@ -458,6 +461,25 @@ function ImgbedUploadSection({ activeDesktop }: { activeDesktop: Desktop | null 
 function AppearanceSection({ activeDesktop }: { activeDesktop: Desktop | null }) {
   const settings = useSettings();
   const workspace = useWorkspace();
+  const singleCatNames = useMemo(() => {
+    const seen: string[] = [];
+    for (const m of getSearchableBookmarks(workspace)) {
+      const c = categoryOf(m);
+      if (c && !seen.includes(c)) seen.push(c);
+    }
+    return [
+      ...PREFERRED_ORDER.filter((n) => seen.includes(n)),
+      ...seen.filter((n) => !PREFERRED_ORDER.includes(n)),
+    ];
+  }, [workspace]);
+  const toggleSingleCat = (name: string, show: boolean) => {
+    patchSettings({
+      singleKnownCategories: [...new Set([...settings.singleKnownCategories, ...singleCatNames])],
+      singleExcludedCategories: show
+        ? settings.singleExcludedCategories.filter((c) => c !== name)
+        : [...new Set([...settings.singleExcludedCategories, name])],
+    });
+  };
   const wallpaperId = activeDesktop?.wallpaper ?? settings.defaultWallpaper;
   const [imgbedUrl, setImgbedUrl] = useState(
     typeof wallpaperId === 'string' && wallpaperId.startsWith('url:') ? wallpaperId.slice(4) : '',
@@ -560,6 +582,22 @@ function AppearanceSection({ activeDesktop }: { activeDesktop: Desktop | null })
             onChange={(value) => patchSettings({ layoutMode: value as LayoutMode })}
           />
         </SettingRow>
+        <div className="settings-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 4 }}>
+          <div className="settings-row__text">
+            <h3>在一页全览中显示的分类</h3>
+            <p>只有打开的分类会进入一页全览（一页只放自家服务）；以后导入浏览器书签产生的新分类默认关闭，只出现在多桌面里。</p>
+          </div>
+          {singleCatNames.map((name) => (
+            <div key={name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '3px 0' }}>
+              <span style={{ fontSize: 13 }}>{name}</span>
+              <Switch
+                label={`${name} 显示在一页全览`}
+                checked={!settings.singleExcludedCategories.includes(name)}
+                onChange={(show) => toggleSingleCat(name, show)}
+              />
+            </div>
+          ))}
+        </div>
         <SettingRow
           title="预加载全部壁纸"
           description="打开页面后趁空闲把每个桌面的壁纸提前下载到浏览器缓存，切换桌面时背景立即显示、不再现拉现等。流量敏感时可关。"

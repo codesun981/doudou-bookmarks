@@ -12,6 +12,12 @@ export function normalizeChromeTree(nodes: chrome.bookmarks.BookmarkTreeNode[]):
   }));
 }
 
+/** 书签所属分类名：parentId 形如 cat:<分类名> 最可靠；path 是含根文件夹名的全路径，不能取 [0]（那是根名）。 */
+export function categoryOf(meta: Pick<BookmarkMeta, 'parentId' | 'path'>): string {
+  if (meta.parentId?.startsWith('cat:')) return meta.parentId.slice(4);
+  return meta.path[meta.path.length - 1] ?? '未分类';
+}
+
 export function displayTitle(node: BookmarkNode): string {
   const title = node.title.trim();
   if (title) return title;

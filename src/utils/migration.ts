@@ -159,6 +159,8 @@ function sanitizeSettings(raw: unknown, issues: string[]): AppSettings {
     multiLinkQuickButton: asBoolean(value.multiLinkQuickButton, base.multiLinkQuickButton),
     preloadWallpapers: asBoolean(value.preloadWallpapers, base.preloadWallpapers),
     layoutMode: oneOf<LayoutMode>(value.layoutMode, LAYOUT_MODES, base.layoutMode),
+    singleKnownCategories: stringArray(value.singleKnownCategories, 40, 100),
+    singleExcludedCategories: stringArray(value.singleExcludedCategories, 40, 100),
   };
 }
 

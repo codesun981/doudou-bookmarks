@@ -29,4 +29,8 @@ export interface AppSettings {
   multiLinkQuickButton: boolean;
   preloadWallpapers: boolean;
   layoutMode: LayoutMode;
+  /** 一页白名单：已知的分类名（用于识别新分类）。 */
+  singleKnownCategories: string[];
+  /** 一页白名单：被排除的分类（新分类首次出现自动加入）。 */
+  singleExcludedCategories: string[];
 }

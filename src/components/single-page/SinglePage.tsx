@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { DragEvent, MouseEvent } from 'react';
-import { CaretDown, FolderOpen, Plus } from '@phosphor-icons/react';
+import { CaretDown, FolderOpen, MagnifyingGlass, Plus, X } from '@phosphor-icons/react';
 import type { BookmarkMeta } from '../../types/bookmark';
 import type { BookmarkView } from '../../stores/desktop-store';
 import {
@@ -13,11 +13,12 @@ import { pushToast } from '../../stores/ui-store';
 import { isServerMode } from '../../services/server-mode';
 import { openUrl } from '../../services/browser-api';
 import { BookmarkTile } from '../bookmark-grid/BookmarkTile';
+import { categoryOf } from '../../features/bookmarks/tree';
 import { BookmarkEditModal, LinkChooserModal } from '../bookmark-grid/BookmarkGrid';
 import { Segmented } from '../ui/Controls';
 
 /** 分区顺序：按打开频率（用户 2026-11-21 批准的推荐序），新分类追加在后。 */
-const PREFERRED_ORDER = ['常用', '我的站点', '工具服务', '服务器面板', '内网服务'];
+export const PREFERRED_ORDER = ['常用', '我的站点', '工具服务', '服务器面板', '内网服务'];
 const COLLAPSE_KEY = 'glassdesk:single-collapsed:v1';
 
 function metaToView(meta: BookmarkMeta): BookmarkView {
@@ -79,11 +80,17 @@ export function SinglePage() {
   const [menuArmed, setMenuArmed] = useState(false);
   const dragRef = useRef<{ id: string; cat: string } | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const pageRef = useRef<HTMLDivElement>(null);
+  const sectionRefs = useRef(new Map<string, HTMLElement>());
+  const [activeSec, setActiveSec] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
+  const [deploySel, setDeploySel] = useState<string | null>(null);
+  const [tagSel, setTagSel] = useState<string | null>(null);
 
   const sections = useMemo(() => {
     const byCat = new Map<string, BookmarkMeta[]>();
     for (const meta of all) {
-      const cat = meta.path[0] ?? '未分类';
+      const cat = categoryOf(meta);
       const list = byCat.get(cat) ?? [];
       list.push(meta);
       byCat.set(cat, list);
@@ -95,6 +102,64 @@ export function SinglePage() {
     return names.map((name) => ({ name, items: byCat.get(name) ?? [] }));
   }, [all]);
   const categories = useMemo(() => sections.map((s) => s.name), [sections]);
+
+  // 一页白名单：首次出现的新分类——若白名单已初始化，自动排除（只进多桌面）。
+  const known = settings.singleKnownCategories;
+  const excluded = settings.singleExcludedCategories;
+  useEffect(() => {
+    if (!categories.length) return;
+    const unseen = categories.filter((c) => !known.includes(c));
+    if (!unseen.length) return;
+    if (known.length === 0) {
+      patchSettings({ singleKnownCategories: categories });
+    } else {
+      patchSettings({
+        singleKnownCategories: [...known, ...unseen],
+        singleExcludedCategories: [...new Set([...excluded, ...unseen])],
+      });
+    }
+  }, [categories, known, excluded]);
+
+  const visibleSections = useMemo(
+    () => sections.filter((s) => !excluded.includes(s.name)),
+    [sections, excluded],
+  );
+  const visibleItems = useMemo(
+    () => visibleSections.flatMap((s) => s.items),
+    [visibleSections],
+  );
+
+  const deployFacets = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const m of visibleItems) if (m.deploy) map.set(m.deploy, (map.get(m.deploy) ?? 0) + 1);
+    return [...map.entries()].sort((a, b) => b[1] - a[1]);
+  }, [visibleItems]);
+  const tagFacets = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const m of visibleItems) if (m.tag) map.set(m.tag, (map.get(m.tag) ?? 0) + 1);
+    return [...map.entries()].sort((a, b) => b[1] - a[1]);
+  }, [visibleItems]);
+
+  const q = query.trim().toLowerCase();
+  const filtering = q !== '' || deploySel !== null || tagSel !== null;
+  const matches = (m: BookmarkMeta): boolean => {
+    if (deploySel && m.deploy !== deploySel) return false;
+    if (tagSel && m.tag !== tagSel) return false;
+    if (q) {
+      const hay = `${m.title} ${m.url} ${m.desc ?? ''} ${m.deploy ?? ''} ${m.tag ?? ''}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  };
+  const displaySections = visibleSections
+    .map((s) => ({ ...s, shown: filtering ? s.items.filter(matches) : s.items }))
+    .filter((s) => !filtering || s.shown.length > 0);
+  const matchCount = filtering ? displaySections.reduce((n, s) => n + s.shown.length, 0) : visibleItems.length;
+  const clearFilters = () => {
+    setQuery('');
+    setDeploySel(null);
+    setTagSel(null);
+  };
 
   useEffect(() => {
     try {
@@ -119,6 +184,34 @@ export function SinglePage() {
       window.removeEventListener('keydown', onKey);
     };
   }, [menu]);
+
+  const secKey = displaySections.map((s) => s.name).join('|');
+  useEffect(() => {
+    const root = pageRef.current;
+    if (!root) return;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (e.isIntersecting) setActiveSec(e.target.getAttribute('data-sec'));
+        }
+      },
+      { root, rootMargin: '-140px 0px -60% 0px' },
+    );
+    sectionRefs.current.forEach((el) => obs.observe(el));
+    return () => obs.disconnect();
+  }, [secKey]);
+
+  const scrollToSec = (name: string) => {
+    setCollapsed((prev) => {
+      if (!prev.has(name)) return prev;
+      const next = new Set(prev);
+      next.delete(name);
+      return next;
+    });
+    requestAnimationFrame(() => {
+      sectionRefs.current.get(name)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  };
 
   const toggleCollapsed = (name: string) =>
     setCollapsed((prev) => {
@@ -182,11 +275,11 @@ export function SinglePage() {
   };
 
   return (
-    <div className="single-page">
+    <div className="single-page" ref={pageRef}>
       <div className="single-page__head">
         <div>
           <h1 className="single-page__title">豆豆书签</h1>
-          <p className="single-page__sub">全部 {all.length} 个书签 · 按分类分区，拖动可排序、跨区拖动改分类</p>
+          <p className="single-page__sub">自家服务全览 · {visibleItems.length} 个书签 · 拖动可排序、跨区拖动改分类</p>
         </div>
         <Segmented
           label="书签显示方式"
@@ -199,10 +292,94 @@ export function SinglePage() {
         />
       </div>
 
-      {sections.map((section) => {
-        const isCollapsed = collapsed.has(section.name);
+      <div className="single-sticky">
+        <nav className="single-nav" aria-label="分类导航">
+          {displaySections.map((s) => (
+            <button
+              key={s.name}
+              type="button"
+              className="single-nav__chip"
+              data-active={activeSec === s.name}
+              onClick={() => scrollToSec(s.name)}
+            >
+              {s.name}
+              <span className="single-nav__count">{filtering ? s.shown.length : s.items.length}</span>
+            </button>
+          ))}
+        </nav>
+        <div className="single-search">
+          <MagnifyingGlass size={15} />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="搜索名称 / 网址 / 备注…"
+            aria-label="搜索书签"
+          />
+          {query ? (
+            <button type="button" className="single-search__clear" onClick={() => setQuery('')} aria-label="清空搜索">
+              <X size={13} />
+            </button>
+          ) : null}
+        </div>
+      </div>
+
+      {deployFacets.length || tagFacets.length || filtering ? (
+        <div className="single-facets">
+          {deployFacets.length ? (
+            <span className="single-facets__group">
+              <span className="single-facets__label">部署</span>
+              {deployFacets.map(([name, count]) => (
+                <button
+                  key={name}
+                  type="button"
+                  className="facet-chip"
+                  data-active={deploySel === name}
+                  onClick={() => setDeploySel(deploySel === name ? null : name)}
+                >
+                  {name} · {count}
+                </button>
+              ))}
+            </span>
+          ) : null}
+          {tagFacets.length ? (
+            <span className="single-facets__group">
+              <span className="single-facets__label">标签</span>
+              {tagFacets.map(([name, count]) => (
+                <button
+                  key={name}
+                  type="button"
+                  className="facet-chip"
+                  data-active={tagSel === name}
+                  onClick={() => setTagSel(tagSel === name ? null : name)}
+                >
+                  {name} · {count}
+                </button>
+              ))}
+            </span>
+          ) : null}
+          {filtering ? (
+            <span className="single-facets__result">
+              筛出 {matchCount} / {visibleItems.length}
+              <button type="button" className="facet-clear" onClick={clearFilters}>
+                清除筛选
+              </button>
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+
+      {displaySections.map((section) => {
+        const isCollapsed = !filtering && collapsed.has(section.name);
         return (
-          <section key={section.name} className="single-section">
+          <section
+            key={section.name}
+            className="single-section"
+            data-sec={section.name}
+            ref={(el) => {
+              if (el) sectionRefs.current.set(section.name, el);
+              else sectionRefs.current.delete(section.name);
+            }}
+          >
             <header className="single-section__head">
               <button
                 type="button"
@@ -212,7 +389,9 @@ export function SinglePage() {
               >
                 <FolderOpen size={19} weight="fill" className="single-section__folder" />
                 <span className="single-section__name">{section.name}</span>
-                <span className="single-section__count">{section.items.length} 个书签</span>
+                <span className="single-section__count">
+                  {filtering ? `命中 ${section.shown.length} / ${section.items.length}` : `${section.items.length} 个书签`}
+                </span>
                 <CaretDown
                   size={15}
                   className={`single-section__caret${isCollapsed ? ' single-section__caret--closed' : ''}`}
@@ -221,7 +400,7 @@ export function SinglePage() {
             </header>
             {isCollapsed ? null : (
               <div className={`single-grid single-grid--${settings.bookmarkViewMode}`}>
-                {section.items.map((meta) => {
+                {section.shown.map((meta) => {
                   const view = metaToView(meta);
                   return (
                     <BookmarkTile
@@ -245,7 +424,7 @@ export function SinglePage() {
                     />
                   );
                 })}
-                {server ? (
+                {server && !filtering ? (
                   <button
                     type="button"
                     className="single-add"
@@ -260,6 +439,9 @@ export function SinglePage() {
           </section>
         );
       })}
+      {filtering && matchCount === 0 ? (
+        <p className="single-empty">没有匹配的书签，换个关键词或清除筛选试试。</p>
+      ) : null}
 
       {linkTarget ? <LinkChooserModal view={linkTarget} onClose={() => setLinkTarget(null)} /> : null}
       {editing ? (
