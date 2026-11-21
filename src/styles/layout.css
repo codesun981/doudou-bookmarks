@@ -5,6 +5,7 @@
 }
 
 .wallpaper-stack {
+  background: linear-gradient(160deg, #2b3a4a 0%, #1c2733 55%, #131b25 100%);
   position: fixed;
   inset: 0;
   z-index: -3;
@@ -2096,4 +2097,54 @@
   margin: 0;
   font-size: 12.5px;
   color: #ff6b60;
+}
+
+/* 添加书签虚线卡 */
+.bookmark-add {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 86px;
+  border-radius: 14px;
+  border: 1.5px dashed rgb(255 255 255 / 38%);
+  background: rgb(255 255 255 / 5%);
+  color: rgb(255 255 255 / 85%);
+  font-size: 12.5px;
+  font-weight: 550;
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease, transform 140ms ease;
+}
+.bookmark-add:hover {
+  background: rgb(255 255 255 / 12%);
+  border-color: rgb(255 255 255 / 62%);
+}
+.bookmark-add:active {
+  transform: scale(0.98);
+}
+.bookmark-add--card {
+  flex-direction: row;
+  min-height: 66px;
+  font-size: 13px;
+}
+
+/* 卡片/磁贴阴影收敛：默认 .glass 阴影是给大面板的，卡片只留一层淡投影 */
+.bookmark-grid .bookmark {
+  box-shadow:
+    0 10px 26px -16px rgb(0 0 0 / 42%),
+    0 2px 6px rgb(0 0 0 / 10%),
+    var(--glass-inner);
+}
+
+/* 重新导入按钮：深色衬底，亮壁纸上也读得清 */
+.bookmarks-actions .bookmarks-refresh {
+  background: rgb(22 26 36 / 45%);
+  border: 1px solid rgb(255 255 255 / 20%);
+  color: #fff;
+  -webkit-backdrop-filter: blur(10px) saturate(1.2);
+  backdrop-filter: blur(10px) saturate(1.2);
+}
+.bookmarks-actions .bookmarks-refresh:hover {
+  background: rgb(22 26 36 / 62%);
 }

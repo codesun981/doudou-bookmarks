@@ -9,6 +9,7 @@ import {
   Copy,
   FolderOpen,
   PencilSimple,
+  Plus,
   PushPin,
   Trash,
   WarningCircle,
@@ -63,6 +64,7 @@ export function BookmarkGrid() {
   const [dropTarget, setDropTarget] = useState<{ id: string; after: boolean } | null>(null);
   const [context, setContext] = useState<ContextState | null>(null);
   const [editTarget, setEditTarget] = useState<BookmarkView | null>(null);
+  const [creating, setCreating] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [folderStack, setFolderStack] = useState<string[]>([]);
 
@@ -235,7 +237,7 @@ export function BookmarkGrid() {
           {desktop.sourceFolderId ? (
             <button
               type="button"
-              className="btn btn--glass btn--small"
+              className="btn btn--glass btn--small bookmarks-refresh"
               aria-label="重新导入书签并刷新网站图标"
               title="重新导入书签并刷新网站图标"
               disabled={refreshing}
@@ -303,6 +305,16 @@ export function BookmarkGrid() {
               />
             ),
           )}
+          {isServerMode() ? (
+            <button
+              type="button"
+              className={`bookmark-add${settings.bookmarkViewMode === 'cards' ? ' bookmark-add--card' : ''}`}
+              onClick={() => setCreating(true)}
+            >
+              <Plus size={settings.bookmarkViewMode === 'cards' ? 18 : 24} weight="bold" />
+              <span>添加书签</span>
+            </button>
+          ) : null}
         </div>
       ) : (
         <EmptyBookmarks
@@ -346,6 +358,15 @@ export function BookmarkGrid() {
           view={editTarget}
           categories={[desktop.name, ...others.map((o) => o.name)]}
           onClose={() => setEditTarget(null)}
+        />
+      ) : null}
+
+      {creating ? (
+        <BookmarkEditModal
+          view={null}
+          categories={[desktop.name, ...others.map((o) => o.name)]}
+          defaultCategory={desktop.name}
+          onClose={() => setCreating(false)}
         />
       ) : null}
     </section>
@@ -598,16 +619,18 @@ function BookmarkContextMenu({
 function BookmarkEditModal({
   view,
   categories,
+  defaultCategory,
   onClose,
 }: {
-  view: BookmarkView;
+  view: BookmarkView | null;
   categories: string[];
+  defaultCategory?: string;
   onClose: () => void;
 }) {
-  const [name, setName] = useState(view.title);
-  const [url, setUrl] = useState(view.url);
-  const [desc, setDesc] = useState(view.desc ?? '');
-  const [catelog, setCatelog] = useState(view.path[0] ?? categories[0] ?? '');
+  const [name, setName] = useState(view?.title ?? '');
+  const [url, setUrl] = useState(view?.url ?? '');
+  const [desc, setDesc] = useState(view?.desc ?? '');
+  const [catelog, setCatelog] = useState(view?.path[0] ?? defaultCategory ?? categories[0] ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -622,14 +645,21 @@ function BookmarkEditModal({
     setBusy(true);
     setError('');
     try {
-      const res = await fetch(`/api/bookmarks/${view.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: n, url: u, desc: desc.trim(), catelog }),
-      });
+      const payload = JSON.stringify({ name: n, url: u, desc: desc.trim(), catelog });
+      const res = view
+        ? await fetch(`/api/bookmarks/${view.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: payload,
+          })
+        : await fetch('/api/bookmarks', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: payload,
+          });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       await reimportBookmarks();
-      pushToast('书签已更新。', 'success');
+      pushToast(view ? '书签已更新。' : '书签已添加。', 'success');
       onClose();
     } catch {
       setError('保存失败，请重试。');
@@ -638,7 +668,7 @@ function BookmarkEditModal({
   };
 
   return (
-    <Modal open onClose={onClose} label={`编辑书签：${view.title}`} className="modal--confirm">
+    <Modal open onClose={onClose} label={view ? `编辑书签：${view.title}` : '添加书签'} className="modal--confirm">
       <form
         className="bookmark-edit"
         onSubmit={(event) => {
@@ -646,14 +676,14 @@ function BookmarkEditModal({
           void save();
         }}
       >
-        <h3 className="modal__title bookmark-edit__title">编辑书签</h3>
+        <h3 className="modal__title bookmark-edit__title">{view ? '编辑书签' : '添加书签'}</h3>
         <label className="bookmark-edit__field">
           <span>名称</span>
           <input value={name} onChange={(e) => setName(e.target.value)} autoFocus />
         </label>
         <label className="bookmark-edit__field">
           <span>网址</span>
-          <input value={url} onChange={(e) => setUrl(e.target.value)} inputMode="url" />
+          <input value={url} onChange={(e) => setUrl(e.target.value)} inputMode="url" placeholder="https://" />
         </label>
         <label className="bookmark-edit__field">
           <span>备注（卡片视图显示）</span>
@@ -675,7 +705,7 @@ function BookmarkEditModal({
             取消
           </button>
           <button type="submit" className="btn btn--primary btn--small" disabled={busy}>
-            {busy ? '保存中…' : '保存'}
+            {busy ? '保存中…' : view ? '保存' : '添加'}
           </button>
         </div>
       </form>
