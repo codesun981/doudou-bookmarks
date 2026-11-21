@@ -5,6 +5,8 @@ import { LinksEditor, cleanLinks } from '../../components/bookmark-grid/LinksEdi
 import type { BookmarkLink } from '../../types/bookmark';
 import { DotsSixVertical } from '@phosphor-icons/react';
 import { pushToast } from '../../stores/ui-store';
+import { TagChips, splitTagString } from '../../components/bookmark-grid/TagChips';
+import { ConfirmDialog } from '../../components/ui/Modal';
 
 // 豆豆书签（fork）：云端管理三页——书签 / 分类 / 标签，分别走 Worker 的 /api（D1），
 // 改完调 reimportBookmarks 让桌面与一页按新书签树重新同步。
@@ -26,6 +28,19 @@ interface CategoryRow {
 interface AdminData {
   sites: SiteRow[];
   categories: CategoryRow[];
+  extraTags?: string[];
+}
+
+function collectKnownTags(data: AdminData): string[] {
+  const counts = new Map<string, number>();
+  for (const s of data.sites) {
+    for (const t of splitTagString(s.tag)) counts.set(t, (counts.get(t) ?? 0) + 1);
+  }
+  const fromSites = [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([t]) => t);
+  const extra = (data.extraTags ?? []).filter((t) => !counts.has(t));
+  return [...fromSites, ...extra];
 }
 
 const CSS = `
@@ -134,6 +149,7 @@ export function ServerBookmarksAdmin() {
     cat,
     items: data.sites.filter((s) => s.catelog === cat),
   }));
+  const knownTags = collectKnownTags(data);
 
   return (
     <div className="sv-wrap">
@@ -154,6 +170,12 @@ export function ServerBookmarksAdmin() {
             ))}
           </select>
         </div>
+        {knownTags.length > 0 ? (
+          <div style={{ marginTop: 8, display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+            <span className="sv-note" style={{ paddingTop: 4, whiteSpace: 'nowrap' }}>点选已有标签：</span>
+            <TagChips value={form.tag} onChange={(tag) => setForm({ ...form, tag })} known={knownTags} />
+          </div>
+        ) : null}
         <div style={{ marginTop: 8 }}>
           <LinksEditor links={formLinks} onChange={setFormLinks} />
         </div>
@@ -203,6 +225,7 @@ export function ServerBookmarksAdmin() {
                   </div>
                   <div className="sv-links-row">
                     <LinksEditor links={editing.links ?? []} onChange={(links) => setEditing({ ...editing, links })} />
+                    <TagChips value={editing.tag ?? ''} onChange={(tag) => setEditing({ ...editing, tag })} known={knownTags} />
                   </div>
                 </div>
               ) : (
@@ -404,35 +427,63 @@ export function ServerCategoriesAdmin() {
 /* ---------------- 标签页 ---------------- */
 
 const TAG_SPLIT = /[、,，;；]/;
-
-function splitTags(tag: string | null): string[] {
-  if (!tag) return [];
-  return [...new Set(tag.split(TAG_SPLIT).map((s) => s.trim()).filter(Boolean))];
-}
+const splitTags = splitTagString;
 
 export function ServerTagsAdmin() {
-  const { data, error, busy, setBusy, setError, load, refreshAll } = useAdminData();
+  const { data, error, busy, setBusy, setError, load, refreshAll, mutate } = useAdminData();
   const [renaming, setRenaming] = useState<{ from: string; value: string } | null>(null);
-  const [confirming, setConfirming] = useState<string | null>(null);
+  const [newTag, setNewTag] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<{ tag: string; count: number } | null>(null);
 
-  async function applyToSites(match: (segs: string[]) => string[] | null, failMsg: string) {
+  async function updateSites(match: (segs: string[]) => string[] | null): Promise<boolean> {
+    if (!data) return false;
+    for (const site of data.sites) {
+      const next = match(splitTags(site.tag));
+      if (next === null) continue;
+      const res = await api(`/api/bookmarks/${site.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ ...site, tag: next.join('、'), links: site.links ?? [] }),
+      });
+      if (!res.ok) return false;
+    }
+    return true;
+  }
+
+  async function renameTag(from: string, to: string) {
     if (!data) return;
     setBusy(true);
     try {
-      for (const site of data.sites) {
-        const next = match(splitTags(site.tag));
-        if (next === null) continue;
-        const res = await api(`/api/bookmarks/${site.id}`, {
-          method: 'PUT',
-          body: JSON.stringify({ ...site, tag: next.join('、'), links: site.links ?? [] }),
-        });
-        if (!res.ok) throw new Error('save failed');
+      const ok = await updateSites((segs) =>
+        segs.includes(from) ? [...new Set(segs.map((s) => (s === from ? to : s)))] : null,
+      );
+      if (!ok) throw new Error('save failed');
+      if ((data.extraTags ?? []).includes(from)) {
+        await api('/api/tags', { method: 'POST', body: JSON.stringify({ name: to }) });
+        await api(`/api/tags/${encodeURIComponent(from)}`, { method: 'DELETE' });
       }
       setError('');
-      pushToast('标签已更新。', 'success');
+      pushToast('标签已改名。', 'success');
       await refreshAll();
     } catch {
-      setError(failMsg);
+      setError('改名失败，请重试。');
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteTag(tag: string) {
+    if (!data) return;
+    setBusy(true);
+    try {
+      const ok = await updateSites((segs) => (segs.includes(tag) ? segs.filter((s) => s !== tag) : null));
+      if (!ok) throw new Error('save failed');
+      await api(`/api/tags/${encodeURIComponent(tag)}`, { method: 'DELETE' });
+      setError('');
+      pushToast('标签已删除。', 'success');
+      await refreshAll();
+    } catch {
+      setError('删除失败，请重试。');
       await load();
     } finally {
       setBusy(false);
@@ -445,7 +496,12 @@ export function ServerTagsAdmin() {
   for (const site of data.sites) {
     for (const t of splitTags(site.tag)) counts.set(t, (counts.get(t) ?? 0) + 1);
   }
-  const tags = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  const rows = [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([tag, count]) => ({ tag, count }));
+  for (const t of data.extraTags ?? []) {
+    if (!counts.has(t)) rows.push({ tag: t, count: 0 });
+  }
 
   return (
     <div className="sv-wrap">
@@ -453,12 +509,41 @@ export function ServerTagsAdmin() {
       {error ? <p className="sv-error">{error}</p> : null}
 
       <div className="sv-card">
-        <h3>全部标签（{tags.length}）</h3>
-        {tags.length === 0 ? <p className="sv-note">还没有标签。在书签的编辑里打上标签，这里就会出现。</p> : null}
-        {tags.map(([tag, count]) => (
+        <h3>全部标签（{rows.length}）</h3>
+        <div className="sv-row">
+          <input
+            className="sv-input"
+            style={{ flex: 1 }}
+            placeholder="新标签名（先建好，添加书签时就能点选）"
+            value={newTag}
+            onChange={(e) => setNewTag(e.target.value)}
+          />
+          <button
+            className="sv-btn"
+            disabled={busy || !newTag.trim()}
+            onClick={() => {
+              const name = newTag.trim().replace(TAG_SPLIT, '');
+              if (!name) return;
+              if (rows.some((r) => r.tag === name)) {
+                pushToast('这个标签已经有了。', 'info');
+                setNewTag('');
+                return;
+              }
+              setNewTag('');
+              void mutate(
+                () => api('/api/tags', { method: 'POST', body: JSON.stringify({ name }) }),
+                '新建标签失败',
+              );
+            }}
+          >
+            新建标签
+          </button>
+        </div>
+        {rows.length === 0 ? <p className="sv-note">还没有标签。先在上面新建一个，或在书签的编辑里打上标签。</p> : null}
+        {rows.map(({ tag, count }) => (
           <div className="sv-row" key={tag}>
             <span className="sv-tag">{tag}</span>
-            <span className="sv-url">{count} 条书签</span>
+            <span className="sv-url">{count > 0 ? `${count} 条书签` : '未使用'}</span>
             {renaming?.from === tag ? (
               <>
                 <input
@@ -473,47 +558,45 @@ export function ServerTagsAdmin() {
                   disabled={busy}
                   onClick={() => {
                     const to = renaming.value.trim().replace(TAG_SPLIT, '');
-                    if (!to || to === tag) { setRenaming(null); return; }
                     setRenaming(null);
-                    void applyToSites(
-                      (segs) => (segs.includes(tag) ? [...new Set(segs.map((s) => (s === tag ? to : s)))] : null),
-                      '改名失败',
-                    );
+                    if (!to || to === tag) return;
+                    void renameTag(tag, to);
                   }}
                 >
                   保存
                 </button>
                 <button className="sv-btn ghost" onClick={() => setRenaming(null)}>取消</button>
               </>
-            ) : confirming === `tag:${tag}` ? (
-              <>
-                <button
-                  className="sv-btn danger"
-                  disabled={busy}
-                  onClick={() => {
-                    setConfirming(null);
-                    void applyToSites(
-                      (segs) => (segs.includes(tag) ? segs.filter((s) => s !== tag) : null),
-                      '删除失败',
-                    );
-                  }}
-                >
-                  确认删除
-                </button>
-                <button className="sv-btn ghost" onClick={() => setConfirming(null)}>取消</button>
-              </>
             ) : (
               <>
                 <button className="sv-btn ghost" disabled={busy} onClick={() => setRenaming({ from: tag, value: tag })}>改名</button>
-                <button className="sv-btn danger" disabled={busy} onClick={() => setConfirming(`tag:${tag}`)}>删除</button>
+                <button className="sv-btn danger" disabled={busy} onClick={() => setDeleteTarget({ tag, count })}>删除</button>
               </>
             )}
           </div>
         ))}
         <p className="sv-note" style={{ marginTop: 8 }}>
-          标签是贴在书签上的贴纸：这里改名或删除，会同步到所有带这个标签的书签。改名成一个已有的标签，等于把两个标签合并。
+          标签是贴在书签上的贴纸：改名或删除会同步到所有带这个标签的书签，删除前会弹窗提醒影响范围。改名成一个已有的标签，等于把两个标签合并。
         </p>
       </div>
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title={`删除标签「${deleteTarget?.tag ?? ''}」？`}
+        body={
+          deleteTarget && deleteTarget.count > 0
+            ? `会把这个标签从 ${deleteTarget.count} 条书签上摘掉。书签本身不会被删除，之后也可以重新打上。`
+            : '这个标签还没有书签在用，删除后会从标签库里移除。'
+        }
+        confirmLabel="删除"
+        danger
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => {
+          const t = deleteTarget;
+          setDeleteTarget(null);
+          if (t) void deleteTag(t.tag);
+        }}
+      />
     </div>
   );
 }

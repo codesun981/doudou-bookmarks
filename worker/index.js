@@ -217,6 +217,16 @@ function linksJson(v, fallbackRaw) {
 }
 
 // ---- 书签/分类 CRUD（设置页「书签管理」与日后 COCO 代管共用） ----
+async function readExtraTags(env) {
+  const r = await env.DB.prepare("SELECT value FROM meta WHERE key = 'extra_tags'").first();
+  try {
+    const v = JSON.parse(r?.value || '[]');
+    return Array.isArray(v) ? v.filter((t) => typeof t === 'string' && t) : [];
+  } catch { return []; }
+}
+async function writeExtraTags(env, tags) {
+  await env.DB.prepare("INSERT INTO meta (key, value) VALUES ('extra_tags', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind(JSON.stringify(tags)).run();
+}
 async function adminData(env) {
   const [sites, cats] = await Promise.all([
     env.DB.prepare('SELECT id, name, url, desc, tag, deploy, links, logo, catelog, sort_order, in_dock FROM sites ORDER BY catelog, sort_order ASC, id ASC').all(),
@@ -225,6 +235,7 @@ async function adminData(env) {
   return {
     sites: (sites.results || []).map((s) => ({ ...s, links: parseLinks(s.links) })),
     categories: (cats.results || []).map((c) => ({ ...c, in_single: c.in_single === 1 ? 1 : 0 })),
+    extraTags: await readExtraTags(env),
   };
 }
 async function readJsonBody(request) {
@@ -232,6 +243,28 @@ async function readJsonBody(request) {
 }
 async function handleApi(request, env, path) {
   if (path === '/api/admin/data' && request.method === 'GET') return json(await adminData(env));
+  if (path === '/api/tags' && request.method === 'POST') {
+    const b = await readJsonBody(request);
+    const name = String(b.name || '').trim().replace(/[、,，;；]/g, '');
+    if (!name || name.length > 20) return json({ error: '标签名不合法' }, 400);
+    const cur = await readExtraTags(env);
+    if (!cur.includes(name)) {
+      cur.push(name);
+      await writeExtraTags(env, cur);
+      await bumpDataVersion(env);
+    }
+    return json({ ok: true, extraTags: cur });
+  }
+  if (path.startsWith('/api/tags/') && request.method === 'DELETE') {
+    const name = decodeURIComponent(path.slice('/api/tags/'.length));
+    const cur = await readExtraTags(env);
+    const next = cur.filter((t) => t !== name);
+    if (next.length !== cur.length) {
+      await writeExtraTags(env, next);
+      await bumpDataVersion(env);
+    }
+    return json({ ok: true, extraTags: next });
+  }
   if (path === '/api/bookmarks' && request.method === 'POST') {
     const b = await readJsonBody(request);
     const name = String(b.name || '').trim();

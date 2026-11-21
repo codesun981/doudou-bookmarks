@@ -29,6 +29,7 @@ import {
   workspaceStore,
 } from '../../stores/desktop-store';
 import { LinksEditor, cleanLinks } from './LinksEditor';
+import { TagChips, splitTagString } from './TagChips';
 import type { BookmarkLink } from '../../types/bookmark';
 import { useStore } from '../../stores/create-store';
 import { patchSettings, useSettings } from '../../stores/settings-store';
@@ -787,6 +788,29 @@ export function BookmarkEditModal({
   const [catelog, setCatelog] = useState(view?.path[view.path.length - 1] ?? defaultCategory ?? categories[0] ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [knownTags, setKnownTags] = useState<string[]>([]);
+  useEffect(() => {
+    if (!isServerMode()) return;
+    let cancelled = false;
+    void fetch('/api/admin/data')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { sites?: { tag?: string | null }[]; extraTags?: string[] } | null) => {
+        if (cancelled || !data) return;
+        const counts = new Map<string, number>();
+        for (const s of data.sites ?? []) {
+          for (const t of splitTagString(s.tag)) counts.set(t, (counts.get(t) ?? 0) + 1);
+        }
+        const fromSites = [...counts.entries()]
+          .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+          .map(([t]) => t);
+        const extra = (data.extraTags ?? []).filter((t) => !counts.has(t));
+        setKnownTags([...fromSites, ...extra]);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const [tab, setTab] = useState<'new' | 'library'>('new');
   const [libQuery, setLibQuery] = useState('');
   const showTabs = !view && Boolean(libraryItems) && Boolean(onPickLibrary);
@@ -918,6 +942,12 @@ export function BookmarkEditModal({
           <span>标签（可打多个，顿号分隔）</span>
           <input value={tag} onChange={(e) => setTag(e.target.value)} placeholder="如：mini、EO（顶部搜索里点标签筛选）" maxLength={60} />
         </label>
+        {knownTags.length > 0 ? (
+          <div className="bookmark-edit__field">
+            <span>点选已有标签</span>
+            <TagChips value={tag} onChange={setTag} known={knownTags} />
+          </div>
+        ) : null}
         <div className="bookmark-edit__field">
           <span>副链接（同一服务的其他入口，可空）</span>
           <LinksEditor links={links} onChange={setLinks} />

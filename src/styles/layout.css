@@ -2768,3 +2768,27 @@
 .single-page__to-desktops {
   margin-right: 10px;
 }
+
+/* 已有标签点选器（添加/编辑书签时快速选标签） */
+.tag-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.tag-chip {
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid rgb(255 255 255 / 22%);
+  background: rgb(255 255 255 / 7%);
+  color: rgb(255 255 255 / 75%);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.tag-chip:hover { background: rgb(255 255 255 / 14%); color: #fff; }
+.tag-chip[data-active="true"] {
+  background: rgb(255 214 10 / 16%);
+  border-color: rgb(255 214 10 / 45%);
+  color: #ffd60a;
+}
