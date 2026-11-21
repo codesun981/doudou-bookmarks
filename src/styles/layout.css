@@ -2151,6 +2151,10 @@
 }
 
 /* 卡片标签 chip */
+.bookmark-card__title {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
 .bookmark-card__tag {
   flex: none;
   padding: 1px 7px;
