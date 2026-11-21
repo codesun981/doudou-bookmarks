@@ -3,9 +3,11 @@ import { useEffect } from 'react';
 /**
  * Moves the specular sheen of the nearest Liquid Glass surface to the pointer.
  *
- * Writes --spec-x / --spec-y on the hovered `.glass` element and flags it with
- * data-specular so the material can raise the sheen opacity. One delegated
- * listener, at most one rAF per frame, and no state updates in React.
+ * Writes --spec-dx / --spec-dy (pixel offsets from the element centre) on the
+ * hovered `.glass` element and flags it with data-specular so the material
+ * can raise the sheen opacity. The sheen layer moves by transform, so these
+ * writes stay on the compositor and never repaint the card or its shadow.
+ * One delegated listener, at most one rAF per frame, no React state updates.
  */
 export function useLiquidSpecular(enabled: boolean) {
   useEffect(() => {
@@ -18,10 +20,14 @@ export function useLiquidSpecular(enabled: boolean) {
     let frame = 0;
     let pending: PointerEvent | null = null;
     let active: HTMLElement | null = null;
+    let lastDx = Number.NaN;
+    let lastDy = Number.NaN;
 
     const release = () => {
       active?.removeAttribute('data-specular');
       active = null;
+      lastDx = Number.NaN;
+      lastDy = Number.NaN;
     };
 
     const apply = () => {
@@ -43,10 +49,13 @@ export function useLiquidSpecular(enabled: boolean) {
       }
       const rect = element.getBoundingClientRect();
       if (rect.width === 0 || rect.height === 0) return;
-      const x = ((event.clientX - rect.left) / rect.width) * 100;
-      const y = ((event.clientY - rect.top) / rect.height) * 100;
-      element.style.setProperty('--spec-x', `${x.toFixed(1)}%`);
-      element.style.setProperty('--spec-y', `${y.toFixed(1)}%`);
+      const dx = Math.round(event.clientX - rect.left - rect.width / 2);
+      const dy = Math.round(event.clientY - rect.top - rect.height / 2);
+      if (Math.abs(dx - lastDx) < 2 && Math.abs(dy - lastDy) < 2) return;
+      lastDx = dx;
+      lastDy = dy;
+      element.style.setProperty('--spec-dx', `${dx}px`);
+      element.style.setProperty('--spec-dy', `${dy}px`);
       element.dataset.specular = 'true';
     };
 
