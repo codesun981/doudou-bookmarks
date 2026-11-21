@@ -36,7 +36,7 @@ function BookmarkDockItem({ view }: { view: BookmarkView }) {
       type="button"
       className="dock-item"
       aria-label={view.title}
-      onClick={() => openUrl(view.url)}
+      onClick={() => openUrl(view.url, true)}
     >
       <span
         className={`dock-icon ${favicon.loaded ? 'dock-icon--favicon' : 'dock-icon--bookmark'}`}

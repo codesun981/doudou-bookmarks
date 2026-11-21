@@ -183,7 +183,13 @@ export function BookmarkTile({
   }
 
   return (
-    <a {...commonProps} href={view.url} data-desktop-id={desktopId}>
+    <a
+      {...commonProps}
+      href={view.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      data-desktop-id={desktopId}
+    >
       {variant === 'card' ? cardContent : content}
     </a>
   );
