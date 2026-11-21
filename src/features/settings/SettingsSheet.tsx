@@ -60,7 +60,10 @@ const SECTIONS: Array<{ id: SettingsSection; label: string; icon: typeof Monitor
   { id: 'data', label: '数据与备份', icon: HardDrive },
   { id: 'about', label: '关于', icon: Info },
   ...(isServerMode()
-    ? [{ id: 'server' as const, label: '书签管理（云端）', icon: HardDrive }]
+    ? [
+        { id: 'server' as const, label: '书签管理（云端）', icon: HardDrive },
+        { id: 'imgbed' as const, label: '图床上传', icon: UploadSimple },
+      ]
     : []),
 ];
 
@@ -68,6 +71,7 @@ const SECTION_COPY: Record<SettingsSection, { title: string; description: string
   appearance: { title: '外观', description: '壁纸、书签列数、玻璃质感和细微的动效偏好。' },
   desktops: { title: '桌面与书签', description: '管理桌面、文件夹映射和书签同步。' },
   server: { title: '书签管理（云端）', description: '书签与分类存在 Cloudflare 云端，在这里增删改，桌面会跟着同步。' },
+  imgbed: { title: '图床上传', description: '把图片上传到你的图床（cfimg），拿到直链后可以直接设为桌面壁纸。' },
   search: { title: '搜索与快捷键', description: '默认搜索引擎与键盘操作。' },
   data: { title: '数据与备份', description: '所有数据都保存在这台电脑上。' },
   about: { title: '关于 GlassDesk', description: '版本、权限和实现边界。' },
@@ -170,6 +174,7 @@ export function SettingsSheet() {
           {section === 'data' ? <DataSection /> : null}
           {section === 'about' ? <AboutSection /> : null}
           {section === 'server' ? <ServerBookmarksAdmin /> : null}
+          {section === 'imgbed' ? <ImgbedUploadSection activeDesktop={activeDesktop} /> : null}
         </div>
       </div>
     </Modal>
@@ -279,6 +284,169 @@ function ImgbedGallery({ disabled, onPick }: { disabled: boolean; onPick: (url: 
         </div>
       </Modal>
     </>
+  );
+}
+
+function ImgbedUploadSection({ activeDesktop }: { activeDesktop: Desktop | null }) {
+  const [file, setFile] = useState<File | null>(null);
+  const [preview, setPreview] = useState('');
+  const [status, setStatus] = useState<'idle' | 'uploading' | 'done' | 'error' | 'unconfigured'>('idle');
+  const [resultUrl, setResultUrl] = useState('');
+  const [dragging, setDragging] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  function pick(next: File | null | undefined) {
+    if (!next) return;
+    if (!next.type.startsWith('image/')) {
+      pushToast('只能上传图片文件', 'error');
+      return;
+    }
+    if (next.size > 25 * 1024 * 1024) {
+      pushToast('图片超过 25MB，先压缩一下再传', 'error');
+      return;
+    }
+    setFile(next);
+    setStatus('idle');
+    setResultUrl('');
+    setCopied(false);
+    setPreview((old) => {
+      if (old) URL.revokeObjectURL(old);
+      return URL.createObjectURL(next);
+    });
+  }
+
+  async function upload() {
+    if (!file) return;
+    setStatus('uploading');
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const res = await fetch('/api/imgbed/upload', { method: 'POST', body: form });
+      const body = (await res.json()) as { configured: boolean; url?: string; error?: string };
+      if (!body.configured) { setStatus('unconfigured'); return; }
+      if (!res.ok || !body.url) { setStatus('error'); return; }
+      setResultUrl(body.url);
+      setStatus('done');
+    } catch { setStatus('error'); }
+  }
+
+  return (
+    <div className="settings-section">
+      <div className="settings-group">
+        <div className="settings-group__title">上传图片到图床</div>
+        <div
+          role="button"
+          tabIndex={0}
+          aria-label="选择或拖入图片"
+          onClick={() => inputRef.current?.click()}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') inputRef.current?.click();
+          }}
+          onDragOver={(event) => {
+            event.preventDefault();
+            setDragging(true);
+          }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={(event) => {
+            event.preventDefault();
+            setDragging(false);
+            pick(event.dataTransfer.files?.[0]);
+          }}
+          onPaste={(event) => {
+            const item = Array.from(event.clipboardData.files ?? [])[0];
+            if (item) pick(item);
+          }}
+          style={{
+            border: `1.5px dashed ${dragging ? 'rgb(90 120 220 / 70%)' : 'rgb(127 140 180 / 40%)'}`,
+            borderRadius: 14,
+            padding: preview ? 12 : '26px 12px',
+            textAlign: 'center',
+            cursor: 'pointer',
+            background: dragging ? 'rgb(90 120 220 / 8%)' : 'rgb(127 140 180 / 6%)',
+            outline: 'none',
+          }}
+        >
+          <input
+            ref={inputRef}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={(event) => {
+              pick(event.target.files?.[0]);
+              event.target.value = '';
+            }}
+          />
+          {preview ? (
+            <>
+              <img
+                src={preview}
+                alt=""
+                style={{ maxWidth: '100%', maxHeight: 220, borderRadius: 10, objectFit: 'contain' }}
+              />
+              <p style={{ fontSize: 12, opacity: 0.7, marginTop: 8 }}>
+                {file?.name} · {file ? formatBytes(file.size) : ''}（点这里可换一张）
+              </p>
+            </>
+          ) : (
+            <>
+              <UploadSimple size={22} style={{ opacity: 0.6 }} />
+              <p style={{ fontSize: 13, marginTop: 6 }}>点击选择图片，或把图片拖进来 / 粘贴进来</p>
+              <p style={{ fontSize: 11.5, opacity: 0.6, marginTop: 2 }}>支持常见图片格式，单张不超过 25MB</p>
+            </>
+          )}
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className="chip"
+            disabled={!file || status === 'uploading'}
+            onClick={() => void upload()}
+          >
+            {status === 'uploading' ? '上传中…' : '上传到图床'}
+          </button>
+          {status === 'done' && resultUrl ? (
+            <>
+              <button
+                type="button"
+                className="chip"
+                disabled={!activeDesktop}
+                onClick={() => {
+                  if (activeDesktop) {
+                    setDesktopWallpaper(activeDesktop.id, `url:${resultUrl}`);
+                    pushToast('已设为当前桌面壁纸', 'success');
+                  }
+                }}
+              >
+                设为当前桌面壁纸
+              </button>
+              <button
+                type="button"
+                className="chip"
+                onClick={() => {
+                  void navigator.clipboard?.writeText(resultUrl).then(() => setCopied(true)).catch(() => undefined);
+                }}
+              >
+                {copied ? '已复制' : '复制链接'}
+              </button>
+            </>
+          ) : null}
+        </div>
+        {status === 'done' && resultUrl ? (
+          <p style={{ fontSize: 12, wordBreak: 'break-all', opacity: 0.75 }}>
+            上传成功：<a href={resultUrl} target="_blank" rel="noreferrer">{resultUrl}</a>
+            <br />
+            它也会出现在「外观 → 从图床选图」的图库里。
+          </p>
+        ) : null}
+        {status === 'error' ? (
+          <p style={{ fontSize: 12, opacity: 0.7 }}>上传失败，图床暂时连不上或拒绝了这张图，换一张或稍后再试。</p>
+        ) : null}
+        {status === 'unconfigured' ? (
+          <p style={{ fontSize: 12, opacity: 0.7 }}>图床还没配置好（缺图床的 API Token），让 COCO 帮你接上后再来。</p>
+        ) : null}
+      </div>
+    </div>
   );
 }
 

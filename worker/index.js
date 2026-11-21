@@ -335,6 +335,42 @@ async function serveImgbedList(request, env, ctx) {
   return resp;
 }
 
+async function serveImgbedUpload(request, env, ctx) {
+  if (!env.IMGBED_TOKEN) return json({ configured: false });
+  const contentType = request.headers.get('Content-Type') || '';
+  if (!contentType.includes('multipart/form-data')) return json({ error: 'expected_multipart' }, 400);
+  let form;
+  try { form = await request.formData(); } catch { return json({ error: 'bad_form' }, 400); }
+  const file = form.get('file');
+  if (!file || typeof file === 'string') return json({ error: 'no_file' }, 400);
+  const out = new FormData();
+  out.append('file', file, file.name || 'upload');
+  let upstream;
+  try {
+    upstream = await fetch(`${IMGBED_ORIGIN}/upload?responseFormat=object`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${env.IMGBED_TOKEN}` },
+      body: out,
+      signal: AbortSignal.timeout(60000),
+    });
+  } catch { return json({ configured: true, error: 'imgbed_unreachable' }, 502); }
+  if (upstream.status === 401 || upstream.status === 403) {
+    return json({ configured: true, error: 'imgbed_token_invalid' }, 502);
+  }
+  const body = await upstream.json().catch(() => null);
+  if (!upstream.ok || !body) return json({ configured: true, error: 'imgbed_error', status: upstream.status }, 502);
+  const item = Array.isArray(body) ? body[0] : body;
+  const src = item?.src || item?.url || item?.fileUrl || '';
+  if (!src) return json({ configured: true, error: 'imgbed_bad_response' }, 502);
+  const url = src.startsWith('http') ? src : `${IMGBED_ORIGIN}${src.startsWith('/') ? '' : '/'}${src}`;
+  // 上传成功后清掉图库列表首页缓存，新图立刻可见
+  if (ctx) {
+    const cacheKey = new Request('https://desk.aioosi.com/imgbed-cache/0/60', { method: 'GET' });
+    ctx.waitUntil(caches.default.delete(cacheKey));
+  }
+  return json({ configured: true, url, name: item?.fileName || item?.name || file.name || '' });
+}
+
 async function serveWallpaper(env) {
   // 自定义壁纸存 R2（2026-11-21 由 KV 迁出），没有时回退自带蓝图。
   try {
@@ -381,6 +417,7 @@ export default {
     }
     if (path === '/api/icon') return serveIcon(request, env, ctx);
     if (path === '/api/imgbed/list' && request.method === 'GET') return serveImgbedList(request, env, ctx);
+    if (path === '/api/imgbed/upload' && request.method === 'POST') return serveImgbedUpload(request, env, ctx);
     const apiRes = await handleApi(request, env, path);
     if (apiRes) {
       if (request.method !== 'GET' && apiRes.status < 300) {
