@@ -10,7 +10,6 @@ import {
 import { useSettings } from '../stores/settings-store';
 import { closeAllOverlays, setSearchOpen, uiStore } from '../stores/ui-store';
 import { Wallpaper } from '../components/desktop/Wallpaper';
-import { BootScreen } from '../components/desktop/BootScreen';
 import { ErrorScreen } from '../components/desktop/ErrorScreen';
 import { OnboardingScreen } from '../components/desktop/OnboardingScreen';
 import { DesktopStage } from '../components/desktop/DesktopStage';
@@ -19,7 +18,6 @@ import { Dock } from '../components/dock/Dock';
 import { StatusBar } from '../components/status-bar/StatusBar';
 import { SettingsSheet } from '../features/settings/SettingsSheet';
 import { ToastHost } from '../components/ui/ToastHost';
-import { useLiquidSpecular } from '../hooks/use-liquid-specular';
 
 function isTypingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -32,14 +30,7 @@ export function App() {
   const settings = useSettings();
   const wallpaper = getWallpaper(desktop?.wallpaper ?? settings.defaultWallpaper);
 
-  useLiquidSpecular(status === 'ready' && !settings.reducedMotion);
-
   useEffect(() => {
-    const staticBoot = document.getElementById('boot-static');
-    if (staticBoot) {
-      staticBoot.classList.add('is-leaving');
-      window.setTimeout(() => staticBoot.remove(), 200);
-    }
     void bootstrapWorkspace();
   }, []);
 
@@ -110,7 +101,6 @@ export function App() {
 
       {status === 'onboarding' ? <OnboardingScreen /> : null}
       {status === 'error' ? <ErrorScreen /> : null}
-      {status === 'booting' ? <BootScreen /> : null}
 
       <ToastHost />
 

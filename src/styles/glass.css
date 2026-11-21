@@ -43,34 +43,6 @@
   transition: opacity var(--dur) var(--ease-out);
 }
 
-/* Specular sheen. Default sits above the top edge; the pointer hook moves it
-   with --spec-dx / --spec-dy and raises the opacity. The layer is oversized
-   and clipped back to the card box, and it moves via transform ONLY:
-   repainting the gradient position every pointer frame forced the whole
-   backdrop-filter card (shadow included) to re-rasterize in some engines,
-   which read as shadow flicker while the mouse moved. */
-.glass::after {
-  content: '';
-  position: absolute;
-  inset: -110px;
-  z-index: -1;
-  border-radius: inherit;
-  background: radial-gradient(
-    220px 220px at 50% 50%,
-    var(--glass-spec),
-    rgb(255 255 255 / 0) 64%
-  );
-  clip-path: inset(110px round 20px);
-  transform: translate3d(var(--spec-dx, 0px), var(--spec-dy, -34%), 0);
-  opacity: 0.55;
-  pointer-events: none;
-  transition: opacity 240ms var(--ease-out);
-}
-
-.glass[data-specular='true']::after {
-  opacity: 1;
-}
-
 .glass--soft {
   background-color: var(--glass-bg-soft);
   box-shadow: var(--glass-shadow-soft), inset 0 1px 0 rgb(255 255 255 / 14%);
@@ -91,10 +63,6 @@
   backdrop-filter: none;
 }
 
-.glass--material::after {
-  opacity: 0.4;
-}
-
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .glass,
   .glass--soft,
@@ -103,15 +71,9 @@
     background-image: var(--glass-gloss);
   }
 
-  .glass::after {
-    display: none;
-  }
 }
 
 @media (prefers-reduced-transparency: reduce) {
-  .glass::after {
-    display: none;
-  }
 }
 
 .icon-button {
