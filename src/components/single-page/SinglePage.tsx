@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { DragEvent, MouseEvent } from 'react';
-import { CaretDown, FolderOpen, MagnifyingGlass, Plus, X } from '@phosphor-icons/react';
+import { CaretDown, FolderOpen, Plus } from '@phosphor-icons/react';
 import type { BookmarkMeta } from '../../types/bookmark';
 import type { BookmarkView } from '../../stores/desktop-store';
 import {
@@ -18,7 +18,7 @@ import { BookmarkEditModal, LinkChooserModal } from '../bookmark-grid/BookmarkGr
 import { Segmented } from '../ui/Controls';
 
 /** 分区顺序：按打开频率（用户 2026-11-21 批准的推荐序），新分类追加在后。 */
-export const PREFERRED_ORDER = ['常用', '我的站点', '工具服务', '服务器面板', '内网服务'];
+export const PREFERRED_ORDER = ['我的站点', '工具服务', '1Panel', '3x-ui', '内网服务'];
 const COLLAPSE_KEY = 'glassdesk:single-collapsed:v1';
 
 function metaToView(meta: BookmarkMeta): BookmarkView {
@@ -83,7 +83,6 @@ export function SinglePage() {
   const pageRef = useRef<HTMLDivElement>(null);
   const sectionRefs = useRef(new Map<string, HTMLElement>());
   const [activeSec, setActiveSec] = useState<string | null>(null);
-  const [query, setQuery] = useState('');
   const [deploySel, setDeploySel] = useState<string | null>(null);
   const [tagSel, setTagSel] = useState<string | null>(null);
 
@@ -140,15 +139,10 @@ export function SinglePage() {
     return [...map.entries()].sort((a, b) => b[1] - a[1]);
   }, [visibleItems]);
 
-  const q = query.trim().toLowerCase();
-  const filtering = q !== '' || deploySel !== null || tagSel !== null;
+  const filtering = deploySel !== null || tagSel !== null;
   const matches = (m: BookmarkMeta): boolean => {
     if (deploySel && m.deploy !== deploySel) return false;
     if (tagSel && m.tag !== tagSel) return false;
-    if (q) {
-      const hay = `${m.title} ${m.url} ${m.desc ?? ''} ${m.deploy ?? ''} ${m.tag ?? ''}`.toLowerCase();
-      if (!hay.includes(q)) return false;
-    }
     return true;
   };
   const displaySections = visibleSections
@@ -156,7 +150,6 @@ export function SinglePage() {
     .filter((s) => !filtering || s.shown.length > 0);
   const matchCount = filtering ? displaySections.reduce((n, s) => n + s.shown.length, 0) : visibleItems.length;
   const clearFilters = () => {
-    setQuery('');
     setDeploySel(null);
     setTagSel(null);
   };
@@ -274,8 +267,17 @@ export function SinglePage() {
     });
   };
 
+  const scrollTimer = useRef<number>(0);
+  const handleScroll = () => {
+    const el = pageRef.current;
+    if (!el) return;
+    el.classList.add('single-page--scrolling');
+    window.clearTimeout(scrollTimer.current);
+    scrollTimer.current = window.setTimeout(() => el.classList.remove('single-page--scrolling'), 140);
+  };
+
   return (
-    <div className="single-page" ref={pageRef}>
+    <div className="single-page" ref={pageRef} onScroll={handleScroll}>
       <div className="single-page__head">
         <div>
           <h1 className="single-page__title">豆豆书签</h1>
@@ -307,20 +309,6 @@ export function SinglePage() {
             </button>
           ))}
         </nav>
-        <div className="single-search">
-          <MagnifyingGlass size={15} />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="搜索名称 / 网址 / 备注…"
-            aria-label="搜索书签"
-          />
-          {query ? (
-            <button type="button" className="single-search__clear" onClick={() => setQuery('')} aria-label="清空搜索">
-              <X size={13} />
-            </button>
-          ) : null}
-        </div>
       </div>
 
       {deployFacets.length || tagFacets.length || filtering ? (
@@ -440,7 +428,7 @@ export function SinglePage() {
         );
       })}
       {filtering && matchCount === 0 ? (
-        <p className="single-empty">没有匹配的书签，换个关键词或清除筛选试试。</p>
+        <p className="single-empty">没有符合筛选条件的书签，清除筛选试试。</p>
       ) : null}
 
       {linkTarget ? <LinkChooserModal view={linkTarget} onClose={() => setLinkTarget(null)} /> : null}

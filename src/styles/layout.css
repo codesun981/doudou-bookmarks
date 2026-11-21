@@ -2658,3 +2658,25 @@
   .single-search { width: auto; }
   .single-section { scroll-margin-top: 208px; }
 }
+
+/* 一页：细滚动条（macOS 风，不抢眼） */
+.single-page { scrollbar-width: thin; scrollbar-color: rgb(255 255 255 / 30%) transparent; }
+.single-page::-webkit-scrollbar { width: 6px; }
+.single-page::-webkit-scrollbar-track { background: transparent; }
+.single-page::-webkit-scrollbar-thumb { background: rgb(255 255 255 / 26%); border-radius: 3px; }
+.single-page::-webkit-scrollbar-thumb:hover { background: rgb(255 255 255 / 42%); }
+
+/* 一页：滚动时卡片关毛玻璃与过渡，根治滚动阴影闪烁（46 张卡各自 backdrop blur 重绘 + hover 抖动） */
+.single-page .bookmark-card {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background: rgb(13 18 30 / 87%);
+}
+.single-page--scrolling .bookmark-card,
+.single-page--scrolling .bookmark-card * {
+  transition: none !important;
+}
+.single-page--scrolling .bookmark:hover .bookmark-icon,
+.single-page--scrolling .bookmark:hover .bookmark-label {
+  transform: none !important;
+}
