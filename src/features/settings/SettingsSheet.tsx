@@ -851,7 +851,7 @@ function DesktopsSection() {
             <Plus size={13} />
             空白桌面
           </button>
-          {availableFolders.length > 0 && !isServerMode() ? (
+          {availableFolders.length > 0 ? (
             <>
               <select
                 className="select"
