@@ -409,6 +409,16 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname;
     if (path === '/gate') return handleGate(request, env);
+    if (path === '/logout') {
+      // 锁定：清掉门会话 cookie 后回门页（此前站内无任何锁定入口，2026-11-21 补）
+      return new Response(null, {
+        status: 302,
+        headers: {
+          Location: '/gate',
+          'Set-Cookie': `${GATE_COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`,
+        },
+      });
+    }
     if (path === '/wallpaper.jpg') return serveWallpaper(env);
     if (!(await validateGate(request, env))) {
       if (path.startsWith('/api/')) return json({ error: 'unauthorized' }, 401);
