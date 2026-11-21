@@ -2759,3 +2759,12 @@
   background: none;
   color: #7dd3fc;
 }
+
+/* 顶部菜单：空间切换（我的站点 ⇄ 桌面空间） */
+.status-menu button.status-menu__space {
+  color: #ffd60a;
+  font-weight: 700;
+}
+.single-page__to-desktops {
+  margin-right: 10px;
+}

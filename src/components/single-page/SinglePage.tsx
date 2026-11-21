@@ -268,6 +268,13 @@ export function SinglePage() {
           <h1 className="single-page__title">我的站点</h1>
           <p className="single-page__sub">{visibleItems.length} 个书签 · 按部署平台分类 · 拖动可排序、跨区拖动改分类</p>
         </div>
+        <button
+          type="button"
+          className="btn btn--glass single-page__to-desktops"
+          onClick={() => patchSettings({ layoutMode: 'desktops' })}
+        >
+          进入桌面 →
+        </button>
         <Segmented
           label="书签显示方式"
           value={settings.bookmarkViewMode}

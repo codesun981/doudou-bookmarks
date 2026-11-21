@@ -4,10 +4,13 @@ import { useActiveDesktop } from '../../stores/desktop-store';
 import { setSettingsOpen, setWidgetMenuOpen } from '../../stores/ui-store';
 import { formatClock, formatMenuDate } from '../../utils/date';
 import { DynamicIsland } from '../dynamic-island/DynamicIsland';
+import { patchSettings, useSettings } from '../../stores/settings-store';
 
 export function StatusBar() {
   const now = useNow(20_000);
   const desktop = useActiveDesktop();
+  const settings = useSettings();
+  const single = settings.layoutMode === 'single';
   const daytime = now.getHours() >= 6 && now.getHours() < 18;
 
   return (
@@ -33,6 +36,14 @@ export function StatusBar() {
           </button>
         ) : null}
         <nav className="status-menu" aria-label="菜单">
+          <button
+            type="button"
+            className="status-menu__space"
+            title={single ? '进入桌面空间' : '回到我的站点'}
+            onClick={() => patchSettings({ layoutMode: single ? 'desktops' : 'single' })}
+          >
+            {single ? '桌面空间' : '我的站点'}
+          </button>
           <button type="button" onClick={() => setSettingsOpen(true, 'desktops')}>
             书签
           </button>
