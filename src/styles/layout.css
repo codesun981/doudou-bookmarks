@@ -2071,12 +2071,9 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  width: min(400px, 78vw);
 }
 .bookmark-edit__title {
-  margin: 0 0 2px;
-  font-size: 15px;
-  font-weight: 650;
+  margin: 0 0 4px;
 }
 .bookmark-edit__field {
   display: flex;
@@ -2099,10 +2096,4 @@
   margin: 0;
   font-size: 12.5px;
   color: #ff6b60;
-}
-.bookmark-edit__actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 2px;
 }

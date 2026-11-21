@@ -638,7 +638,7 @@ function BookmarkEditModal({
   };
 
   return (
-    <Modal open onClose={onClose} label={`编辑书签：${view.title}`}>
+    <Modal open onClose={onClose} label={`编辑书签：${view.title}`} className="modal--confirm">
       <form
         className="bookmark-edit"
         onSubmit={(event) => {
@@ -646,7 +646,7 @@ function BookmarkEditModal({
           void save();
         }}
       >
-        <h3 className="bookmark-edit__title">编辑书签</h3>
+        <h3 className="modal__title bookmark-edit__title">编辑书签</h3>
         <label className="bookmark-edit__field">
           <span>名称</span>
           <input value={name} onChange={(e) => setName(e.target.value)} autoFocus />
@@ -670,7 +670,7 @@ function BookmarkEditModal({
           </select>
         </label>
         {error ? <p className="bookmark-edit__error">{error}</p> : null}
-        <div className="bookmark-edit__actions">
+        <div className="modal__actions">
           <button type="button" className="btn btn--glass btn--small" onClick={onClose}>
             取消
           </button>
