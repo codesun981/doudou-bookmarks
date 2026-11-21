@@ -719,22 +719,37 @@ export function LinkChooserModal({ view, onClose }: { view: BookmarkView; onClos
         <h3 className="modal__title">{view.title}</h3>
         <p className="link-chooser__hint">这个服务有 {entries.length} 个入口，点一个打开：</p>
         {entries.map((entry) => (
-          <button
-            key={entry.url}
-            type="button"
-            className="link-chooser__row"
-            onClick={() => {
-              openUrl(entry.url, true);
-              onClose();
-            }}
-          >
-            <span className="link-chooser__label">
-              {entry.label}
-              {entry.primary ? <span className="link-chooser__badge">主</span> : null}
-            </span>
-            <span className="link-chooser__url">{prettyUrl(entry.url)}</span>
-            <ArrowSquareOut size={15} />
-          </button>
+          <div key={entry.url} className="link-chooser__row">
+            <button
+              type="button"
+              className="link-chooser__open"
+              onClick={() => {
+                openUrl(entry.url, true);
+                onClose();
+              }}
+            >
+              <span className="link-chooser__label">
+                {entry.label}
+                {entry.primary ? <span className="link-chooser__badge">主</span> : null}
+              </span>
+              <span className="link-chooser__url">{prettyUrl(entry.url)}</span>
+              <ArrowSquareOut size={15} />
+            </button>
+            <button
+              type="button"
+              className="link-chooser__copy"
+              aria-label={`复制链接：${entry.label}`}
+              title="复制链接"
+              onClick={() => {
+                void navigator.clipboard
+                  .writeText(entry.url)
+                  .then(() => pushToast('链接已复制。', 'success'))
+                  .catch(() => pushToast('复制失败，请检查剪贴板权限。', 'error'));
+              }}
+            >
+              <Copy size={14} />
+            </button>
+          </div>
         ))}
       </div>
     </Modal>

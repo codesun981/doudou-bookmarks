@@ -2264,9 +2264,16 @@
 }
 .link-chooser__row {
   display: flex;
+  align-items: stretch;
+  gap: 6px;
+  width: 100%;
+}
+.link-chooser__open {
+  display: flex;
   align-items: center;
   gap: 10px;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   padding: 10px 12px;
   border-radius: 11px;
   border: 1px solid rgb(128 140 160 / 30%);
@@ -2275,8 +2282,23 @@
   cursor: pointer;
   text-align: left;
 }
-.link-chooser__row:hover {
+.link-chooser__open:hover {
   background: rgb(128 140 160 / 20%);
+}
+.link-chooser__copy {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  border-radius: 11px;
+  border: 1px solid rgb(128 140 160 / 30%);
+  background: rgb(128 140 160 / 10%);
+  color: inherit;
+  cursor: pointer;
+}
+.link-chooser__copy:hover {
+  background: rgb(128 140 160 / 25%);
 }
 .link-chooser__label {
   font-size: 13.5px;
