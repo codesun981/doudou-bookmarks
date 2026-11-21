@@ -407,10 +407,6 @@ async function serveIndex(request, env) {
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    // 域名迁移（2026-11-21）：desk.aioosi.com 永久跳转到 nav.aioosi.com
-    if (url.hostname === 'desk.aioosi.com') {
-      return Response.redirect(`https://nav.aioosi.com${url.pathname}${url.search}`, 301);
-    }
     const path = url.pathname;
     if (path === '/gate') return handleGate(request, env);
     if (path === '/wallpaper.jpg') return serveWallpaper(env);
