@@ -36,8 +36,13 @@ function b64urlDecode(text) {
   const bin = atob(text.replace(/-/g, '+').replace(/_/g, '/'));
   return Uint8Array.from(bin, (c) => c.charCodeAt(0));
 }
+// 站点密码（2026-11-21 迁 Worker Secret）：env.SITE_PASSWORD 优先，KV 仅作迁移期兜底。
+async function sitePassword(env) {
+  if (env.SITE_PASSWORD) return env.SITE_PASSWORD;
+  try { return await env.NAV_AUTH.get('site_password'); } catch { return null; }
+}
 async function gateSignKey(env) {
-  const stored = await env.NAV_AUTH.get('site_password');
+  const stored = await sitePassword(env);
   if (!stored) return null;
   return crypto.subtle.importKey('raw', new TextEncoder().encode(stored), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify']);
 }
@@ -56,43 +61,81 @@ async function validateGate(request, env) {
   } catch { return false; }
 }
 function gatePage(error = '') {
-  const err = error ? `<p class="error">${error}</p>` : '';
+  // 锁屏式登录页（2026-11-21 按用户要求换成 Mac 版同款）：壁纸满屏 + 顶部大时钟/日期 +
+  // 圆形头像 + 胶囊密码框；提交契约与旧版一致（POST /gate，字段 password）。
+  const err = error ? `<p class="hint">${error}</p>` : '';
+  const shake = error ? ' shake' : '';
   const html = `<!DOCTYPE html>
-<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>豆豆书签 · 需要密码</title><link rel="icon" type="image/png" href="/logo.png">
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>豆豆书签</title><link rel="icon" type="image/png" href="/logo.png">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-    background: #0a1128 url('/wallpaper.jpg') center / cover no-repeat fixed; color: #e6e9f2; }
-  .card { width: 100%; max-width: 360px; text-align: center; padding: 32px 28px; border-radius: 22px;
-    background: rgb(22 25 32 / 52%); -webkit-backdrop-filter: blur(32px) saturate(1.8); backdrop-filter: blur(32px) saturate(1.8);
-    border: 1px solid rgb(255 255 255 / 14%); box-shadow: 0 30px 64px -26px rgb(0 0 0 / 74%); }
-  .card img { width: 54px; height: 54px; border-radius: 14px; }
-  h1 { font-size: 20px; font-weight: 650; margin: 14px 0 6px; }
-  .sub { font-size: 12.5px; color: rgb(230 233 242 / 62%); margin-bottom: 20px; }
-  input { width: 100%; height: 40px; border-radius: 10px; border: 1px solid rgb(255 255 255 / 18%);
-    background: rgb(255 255 255 / 8%); color: #fff; padding: 0 12px; font-size: 14px; outline: none; }
-  input:focus { border-color: #0a84ff; box-shadow: 0 0 0 3px rgb(10 132 255 / 25%); }
-  button { width: 100%; height: 40px; margin-top: 12px; border: none; border-radius: 10px; cursor: pointer;
-    background: #0a84ff; color: #fff; font-size: 14px; font-weight: 600; }
-  button:hover { background: #0077ed; }
-  .error { color: #ff9f0a; font-size: 12.5px; margin-bottom: 12px; }
+  html, body { height: 100%; }
+  body { min-height: 100dvh; overflow: hidden; position: relative;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #0a1128 url('/wallpaper.jpg') center / cover no-repeat fixed; color: #fff;
+    -webkit-font-smoothing: antialiased; }
+  body::after { content: ''; position: absolute; inset: 0; background: rgb(10 12 24 / 18%); pointer-events: none; }
+  .clock { position: absolute; top: max(7vh, 44px); left: 0; right: 0; text-align: center; z-index: 2;
+    animation: rise 900ms cubic-bezier(.22,1,.36,1) both; text-shadow: 0 2px 24px rgb(0 0 0 / 35%); }
+  .clock .date { font-size: clamp(15px, 2.2vw, 19px); font-weight: 550; color: rgb(255 255 255 / 92%); letter-spacing: .01em; }
+  .clock .time { font-size: clamp(64px, 11vw, 104px); font-weight: 700; line-height: 1.04; letter-spacing: -0.015em; }
+  .lock { position: absolute; left: 0; right: 0; bottom: max(9vh, 56px); z-index: 2; display: flex; flex-direction: column; align-items: center;
+    animation: rise 900ms 120ms cubic-bezier(.22,1,.36,1) both; }
+  .avatar { width: 92px; height: 92px; border-radius: 50%; object-fit: cover;
+    box-shadow: 0 10px 34px rgb(0 0 0 / 42%), 0 0 0 1px rgb(255 255 255 / 22%); }
+  .name { margin-top: 13px; font-size: 21px; font-weight: 600; text-shadow: 0 1px 12px rgb(0 0 0 / 45%); }
+  .field { margin-top: 15px; display: flex; align-items: center; gap: 8px; }
+  .pill { display: flex; align-items: center; width: 196px; height: 34px; border-radius: 999px; padding: 0 14px;
+    background: rgb(255 255 255 / 26%); -webkit-backdrop-filter: blur(18px) saturate(1.6); backdrop-filter: blur(18px) saturate(1.6);
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 14%); transition: box-shadow 160ms ease, background 160ms ease; }
+  .pill:focus-within { background: rgb(255 255 255 / 34%); box-shadow: inset 0 0 0 1px rgb(255 255 255 / 30%), 0 0 0 4px rgb(255 255 255 / 14%); }
+  .pill input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; color: #fff;
+    font-size: 13.5px; text-align: center; letter-spacing: .02em; }
+  .pill input::placeholder { color: rgb(255 255 255 / 78%); }
+  .go { width: 34px; height: 34px; flex: none; border: none; border-radius: 50%; cursor: pointer; color: #fff;
+    background: rgb(255 255 255 / 30%); -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px);
+    display: flex; align-items: center; justify-content: center; opacity: 0; transform: scale(.8); pointer-events: none;
+    transition: opacity 160ms ease, transform 160ms ease, background 160ms ease; }
+  .go.on { opacity: 1; transform: scale(1); pointer-events: auto; }
+  .go:hover { background: rgb(255 255 255 / 44%); }
+  .go svg { width: 15px; height: 15px; }
+  .hint { margin-top: 13px; font-size: 12.5px; color: rgb(255 255 255 / 88%); text-shadow: 0 1px 8px rgb(0 0 0 / 50%); min-height: 16px; }
+  .shake { animation: shake 480ms ease both; }
+  @keyframes shake { 0%,100% { transform: translateX(0); } 18% { transform: translateX(-13px); } 38% { transform: translateX(11px); } 58% { transform: translateX(-8px); } 78% { transform: translateX(6px); } }
+  @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+  @media (max-height: 560px) { .clock { top: 26px; } .lock { bottom: 30px; } .avatar { width: 68px; height: 68px; } }
 </style></head>
-<body><form class="card" method="POST" action="/gate">
-  <img src="/logo.png" alt="">
-  <h1>豆豆书签</h1><p class="sub">输入访问密码进入你的桌面</p>
-  ${err}
-  <input type="password" name="password" placeholder="访问密码" autocomplete="current-password" autofocus>
-  <button type="submit">进入</button>
-</form></body></html>`;
+<body>
+  <div class="clock"><div class="date" id="date"></div><div class="time" id="time"></div></div>
+  <form class="lock${shake}" method="POST" action="/gate">
+    <img class="avatar" src="/logo.png" alt="">
+    <div class="name">豆豆</div>
+    <div class="field">
+      <label class="pill"><input type="password" name="password" placeholder="输入密码" autocomplete="current-password" autofocus></label>
+      <button class="go" type="submit" aria-label="进入"><svg viewBox="0 0 16 16" fill="none"><path d="M2 8h11M9 3.5 13.5 8 9 12.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+    </div>
+    ${err || '<p class="hint"></p>'}
+  </form>
+<script>
+  var timeEl = document.getElementById('time'), dateEl = document.getElementById('date');
+  function tick() {
+    var d = new Date();
+    timeEl.textContent = d.getHours() + ':' + String(d.getMinutes()).padStart(2, '0');
+    dateEl.textContent = d.toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' });
+  }
+  tick(); setInterval(tick, 10000);
+  var input = document.querySelector('input[name="password"]'), go = document.querySelector('.go');
+  input.addEventListener('input', function () { go.classList.toggle('on', input.value.length > 0); });
+</script>
+</body></html>`;
   return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
 }
 async function handleGate(request, env) {
   if (request.method !== 'POST') return gatePage();
   const form = await request.formData();
   const submitted = String(form.get('password') || '');
-  const stored = await env.NAV_AUTH.get('site_password');
+  const stored = await sitePassword(env);
   if (!stored) return gatePage('站点密码尚未设置');
   const [a, b] = await Promise.all([sha256Hex(submitted), sha256Hex(stored)]);
   if (!safeEqual(a, b)) return gatePage('密码不对，再试一次');
@@ -222,6 +265,76 @@ async function handleApi(request, env, path) {
   return null;
 }
 
+// ---- UI 状态存储（2026-11-21 由 KV 迁 D1）+ 全局数据版本号 ----
+let _tablesReady = false;
+async function ensureTables(env) {
+  if (_tablesReady) return;
+  await env.DB.prepare('CREATE TABLE IF NOT EXISTS ui_state (id INTEGER PRIMARY KEY, blob TEXT NOT NULL, version INTEGER NOT NULL, updated_at INTEGER NOT NULL)').run();
+  await env.DB.prepare('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)').run();
+  _tablesReady = true;
+}
+async function getMetaInt(env, key) {
+  const r = await env.DB.prepare('SELECT value FROM meta WHERE key = ?').bind(key).first();
+  return r ? Number(r.value) || 0 : 0;
+}
+async function bumpDataVersion(env) {
+  await env.DB.prepare("INSERT INTO meta (key, value) VALUES ('data_version', '1') ON CONFLICT(key) DO UPDATE SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT)").run();
+}
+async function getStorageRow(env) {
+  await ensureTables(env);
+  const row = await env.DB.prepare('SELECT blob, version FROM ui_state WHERE id = 1').first();
+  if (row) return row;
+  // 首次读：把 KV 里的旧 blob 原样迁入 D1（version=1），KV 键保留作回滚兜底。
+  let blob = '{}';
+  try { blob = (await env.NAV_AUTH.get(STORAGE_KEY)) || '{}'; } catch { /* KV 读失败就空对象起步 */ }
+  await env.DB.prepare('INSERT OR IGNORE INTO ui_state (id, blob, version, updated_at) VALUES (1, ?, 1, ?)').bind(blob, Date.now()).run();
+  return { blob, version: 1 };
+}
+
+// ---- 图床（cfimg / CloudFlare-ImgBed）图库代理 ----
+// 只读适配：用图床自带的 API Token（list 权限）调它的 /api/manage/list，
+// token 存 Worker Secret（IMGBED_TOKEN），不进浏览器、不改图床任何东西。
+const IMGBED_ORIGIN = 'https://cfimg.pages.dev';
+const IMGBED_IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png', 'webp', 'gif', 'avif', 'bmp']);
+async function serveImgbedList(request, env, ctx) {
+  if (!env.IMGBED_TOKEN) return json({ configured: false, files: [], total: 0 });
+  const u = new URL(request.url);
+  const start = Math.max(0, Number(u.searchParams.get('start')) || 0);
+  const count = Math.min(100, Math.max(1, Number(u.searchParams.get('count')) || 60));
+  const cache = caches.default;
+  const cacheKey = new Request(`https://desk.aioosi.com/imgbed-cache/${start}/${count}`, { method: 'GET' });
+  const hit = await cache.match(cacheKey);
+  if (hit) return hit;
+  let upstream;
+  try {
+    upstream = await fetch(`${IMGBED_ORIGIN}/api/manage/list?start=${start}&count=${count}&recursive=true`, {
+      headers: { Authorization: `Bearer ${env.IMGBED_TOKEN}` },
+      signal: AbortSignal.timeout(10000),
+    });
+  } catch { return json({ configured: true, error: 'imgbed_unreachable', files: [], total: 0 }, 502); }
+  if (upstream.status === 401 || upstream.status === 403) {
+    return json({ configured: true, error: 'imgbed_token_invalid', files: [], total: 0 }, 502);
+  }
+  if (!upstream.ok) return json({ configured: true, error: 'imgbed_error', files: [], total: 0 }, 502);
+  const body = await upstream.json().catch(() => null);
+  const rawFiles = Array.isArray(body?.files) ? body.files : [];
+  const files = [];
+  for (const f of rawFiles) {
+    const name = String(f?.name || '');
+    if (!name) continue;
+    const ext = (name.split('.').pop() || '').toLowerCase();
+    const mime = String(f?.metadata?.MimeType || f?.metadata?.FileType || '');
+    if (!IMGBED_IMAGE_EXTS.has(ext) && !mime.startsWith('image/')) continue;
+    const url = `${IMGBED_ORIGIN}/file/${name.split('/').map(encodeURIComponent).join('/')}`;
+    files.push({ name, url, ts: Number(f?.metadata?.TimeStamp) || 0 });
+  }
+  files.sort((a, b) => b.ts - a.ts);
+  const payload = JSON.stringify({ configured: true, files: files.map(({ name, url }) => ({ name, url })), total: Number(body?.totalCount) || files.length, returned: rawFiles.length });
+  const resp = new Response(payload, { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=300' } });
+  if (ctx) ctx.waitUntil(cache.put(cacheKey, resp.clone()));
+  return resp;
+}
+
 async function serveWallpaper(env) {
   // 自定义壁纸存 R2（2026-11-21 由 KV 迁出），没有时回退自带蓝图。
   try {
@@ -267,18 +380,42 @@ export default {
       return new Response('需要密码', { status: 401 });
     }
     if (path === '/api/icon') return serveIcon(request, env, ctx);
+    if (path === '/api/imgbed/list' && request.method === 'GET') return serveImgbedList(request, env, ctx);
     const apiRes = await handleApi(request, env, path);
-    if (apiRes) return apiRes;
-    if (path === '/api/tree') return json({ tree: await buildTree(env) });
+    if (apiRes) {
+      if (request.method !== 'GET' && apiRes.status < 300) {
+        try { await ensureTables(env); await bumpDataVersion(env); } catch { /* 版本号失败不阻塞业务 */ }
+      }
+      return apiRes;
+    }
+    if (path === '/api/tree') {
+      await ensureTables(env);
+      return json({ tree: await buildTree(env), version: await getMetaInt(env, 'data_version') });
+    }
+    if (path === '/api/version') {
+      const row = await getStorageRow(env);
+      return json({ storage: row.version, data: await getMetaInt(env, 'data_version') });
+    }
     if (path === '/api/storage') {
       if (request.method === 'PUT') {
-        const text = await request.text();
+        const body = await readJsonBody(request);
+        const data = body && typeof body === 'object' ? body.data : null;
+        if (!data || typeof data !== 'object') return json({ error: 'data 必填' }, 400);
+        const text = JSON.stringify(data);
         if (text.length > 900000) return json({ error: 'too large' }, 413);
-        await env.NAV_AUTH.put(STORAGE_KEY, text);
-        return json({ ok: true });
+        const row = await getStorageRow(env);
+        const base = Number(body.baseVersion);
+        if (Number.isFinite(base) && base > 0 && base !== row.version) {
+          return json({ error: 'version_conflict', version: row.version }, 409);
+        }
+        const next = row.version + 1;
+        await env.DB.prepare('UPDATE ui_state SET blob = ?, version = ?, updated_at = ? WHERE id = 1').bind(text, next, Date.now()).run();
+        return json({ ok: true, version: next });
       }
-      const v = await env.NAV_AUTH.get(STORAGE_KEY);
-      return new Response(v || '{}', { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
+      const row = await getStorageRow(env);
+      let data = {};
+      try { data = JSON.parse(row.blob); } catch { data = {}; }
+      return json({ version: row.version, data });
     }
     if (path === '/' || path === '/newtab.html') return serveIndex(request, env);
     const asset = await env.ASSETS.fetch(request);

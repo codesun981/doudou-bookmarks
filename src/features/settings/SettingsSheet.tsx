@@ -176,6 +176,90 @@ export function SettingsSheet() {
   );
 }
 
+interface ImgbedFile { name: string; url: string }
+function ImgbedGallery({ disabled, onPick }: { disabled: boolean; onPick: (url: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [state, setState] = useState<'idle' | 'loading' | 'ready' | 'unconfigured' | 'error'>('idle');
+  const [files, setFiles] = useState<ImgbedFile[]>([]);
+  const [total, setTotal] = useState(0);
+  const [returned, setReturned] = useState(0);
+
+  async function load(start: number) {
+    setState('loading');
+    try {
+      const res = await fetch(`/api/imgbed/list?start=${start}&count=60`);
+      const body = (await res.json()) as { configured: boolean; files?: ImgbedFile[]; total?: number; returned?: number };
+      if (!body.configured) { setState('unconfigured'); return; }
+      if (!res.ok) { setState('error'); return; }
+      setFiles((prev) => (start === 0 ? body.files ?? [] : [...prev, ...(body.files ?? [])]));
+      setTotal(body.total ?? 0);
+      setReturned(start + (body.returned ?? 0));
+      setState('ready');
+    } catch { setState('error'); }
+  }
+
+  return (
+    <div style={{ padding: '0 2px 6px' }}>
+      <button
+        type="button"
+        className="chip"
+        disabled={disabled}
+        onClick={() => {
+          const next = !open;
+          setOpen(next);
+          if (next && state === 'idle') void load(0);
+        }}
+      >
+        {open ? '收起图床图库' : '从图床选图'}
+      </button>
+      {open && state === 'loading' && files.length === 0 ? (
+        <p style={{ fontSize: 12, opacity: 0.65, padding: '8px 2px' }}>正在从图床拉取图片…</p>
+      ) : null}
+      {open && state === 'unconfigured' ? (
+        <p style={{ fontSize: 12, opacity: 0.65, padding: '8px 2px' }}>图床图库还没配置好（缺图床的 API Token），先用下面的贴链接方式，或让 COCO 帮你接上。</p>
+      ) : null}
+      {open && state === 'error' ? (
+        <p style={{ fontSize: 12, opacity: 0.65, padding: '8px 2px' }}>图床暂时连不上，稍后再试；也可以先用贴链接。</p>
+      ) : null}
+      {open && files.length > 0 ? (
+        <>
+          <div
+            style={{
+              display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(86px, 1fr))',
+              gap: 8, paddingTop: 10, maxHeight: 300, overflowY: 'auto',
+            }}
+          >
+            {files.map((file) => (
+              <button
+                key={file.name}
+                type="button"
+                title={file.name}
+                onClick={() => onPick(file.url)}
+                style={{
+                  height: 62, borderRadius: 10, border: '1px solid rgb(127 140 180 / 25%)',
+                  background: `url("${file.url}") center / cover no-repeat`,
+                  cursor: 'pointer', padding: 0,
+                }}
+              />
+            ))}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingTop: 8 }}>
+            <span style={{ fontSize: 11.5, opacity: 0.6 }}>共 {total} 张，点任意一张即设为当前桌面壁纸</span>
+            {returned < total ? (
+              <button type="button" className="chip" disabled={state === 'loading'} onClick={() => void load(returned)}>
+                {state === 'loading' ? '加载中…' : '加载更多'}
+              </button>
+            ) : null}
+          </div>
+        </>
+      ) : null}
+      {open && state === 'ready' && files.length === 0 ? (
+        <p style={{ fontSize: 12, opacity: 0.65, padding: '8px 2px' }}>图床里暂时没有图片，先去图床上传几张吧。</p>
+      ) : null}
+    </div>
+  );
+}
+
 function AppearanceSection({ activeDesktop }: { activeDesktop: Desktop | null }) {
   const settings = useSettings();
   const wallpaperId = activeDesktop?.wallpaper ?? settings.defaultWallpaper;
@@ -216,6 +300,13 @@ function AppearanceSection({ activeDesktop }: { activeDesktop: Desktop | null })
             <p>把图床（cfimg）里图片的直链贴进来，即可设为当前桌面壁纸。图片存在图床、本站只记链接。</p>
           </div>
         </div>
+        <ImgbedGallery
+          disabled={!activeDesktop}
+          onPick={(url) => {
+            setImgbedUrl(url);
+            if (activeDesktop) setDesktopWallpaper(activeDesktop.id, `url:${url}`);
+          }}
+        />
         <div style={{ display: 'flex', gap: 8, padding: '0 2px 4px' }}>
           <input
             type="url"
