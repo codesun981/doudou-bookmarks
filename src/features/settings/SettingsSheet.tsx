@@ -468,12 +468,8 @@ function AppearanceSection({ activeDesktop }: { activeDesktop: Desktop | null })
       }
     };
     walk(workspace.bookmarkTree);
-    return [
-      ...PREFERRED_ORDER.filter((n) => list.some((c) => c.name === n)).map(
-        (n) => list.find((c) => c.name === n)!,
-      ),
-      ...list.filter((c) => !PREFERRED_ORDER.includes(c.name)),
-    ];
+    // 顺序与一页分区一致：书签树顺序（云端 sort_order）
+    return list;
   }, [workspace]);
   const toggleSingleCat = async (name: string, show: boolean) => {
     try {

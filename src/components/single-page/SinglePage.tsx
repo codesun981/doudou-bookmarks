@@ -103,12 +103,25 @@ export function SinglePage() {
       list.push(meta);
       byCat.set(cat, list);
     }
-    const names = [
-      ...PREFERRED_ORDER.filter((n) => byCat.has(n)),
-      ...[...byCat.keys()].filter((n) => !PREFERRED_ORDER.includes(n)),
-    ];
+    // 分区顺序以书签树的分类顺序为准（即云端 category_orders.sort_order，
+    // 设置里拖动分类即可调整）；树里没有的分类退回 PREFERRED_ORDER 与出现顺序。
+    const treeOrder: string[] = [];
+    const walk = (nodes: typeof workspace.bookmarkTree) => {
+      for (const n of nodes) {
+        if (n.id?.startsWith('cat:')) treeOrder.push(n.title);
+        if (n.children) walk(n.children);
+      }
+    };
+    walk(workspace.bookmarkTree);
+    const rank = (name: string) => {
+      const t = treeOrder.indexOf(name);
+      if (t >= 0) return t;
+      const p = PREFERRED_ORDER.indexOf(name);
+      return 1000 + (p >= 0 ? p : 999);
+    };
+    const names = [...byCat.keys()].sort((a, b) => rank(a) - rank(b));
     return names.map((name) => ({ name, items: byCat.get(name) ?? [] }));
-  }, [all]);
+  }, [all, workspace.bookmarkTree]);
   const categories = useMemo(() => sections.map((s) => s.name), [sections]);
 
   // 一页白名单：以 D1 category_orders.in_single 为准（树文件夹节点携带），

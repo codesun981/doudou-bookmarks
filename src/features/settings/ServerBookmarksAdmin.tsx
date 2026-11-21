@@ -3,6 +3,7 @@ import { addBookmarkToDesktop, reimportBookmarks, workspaceStore } from '../../s
 import { useStore } from '../../stores/create-store';
 import { LinksEditor, cleanLinks } from '../../components/bookmark-grid/LinksEditor';
 import type { BookmarkLink } from '../../types/bookmark';
+import { DotsSixVertical } from '@phosphor-icons/react';
 
 // 豆豆书签（fork）：云端书签管理——增删改查走 Worker 的 /api（D1），
 // 改完调 reimportBookmarks 让桌面按新书签树重新同步。
@@ -50,6 +51,10 @@ const CSS = `
 .sv-links-row { padding: 2px 0 10px 4px; }
 .sv-place { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 6px 0 10px 4px; font-size: 12px; color: rgb(235 240 250 / 60%); }
 .sv-place .sv-btn { height: 26px; font-size: 12px; }
+.sv-grip { display: inline-flex; align-items: center; color: rgb(235 240 250 / 38%); cursor: grab; padding: 2px 0; touch-action: none; }
+.sv-grip:active { cursor: grabbing; }
+.sv-cat-row.is-dragging { opacity: .35; }
+.sv-cat-row.is-over { box-shadow: inset 0 2px 0 #0a84ff; }
 `;
 
 async function api(path: string, init?: RequestInit): Promise<Response> {
@@ -67,6 +72,38 @@ export function ServerBookmarksAdmin() {
   const [confirming, setConfirming] = useState<string | null>(null);
   const [placingId, setPlacingId] = useState<number | null>(null);
   const desktops = useStore(workspaceStore, (s) => s.desktops);
+  const [catOrder, setCatOrder] = useState<string[]>([]);
+  const [dragCat, setDragCat] = useState<string | null>(null);
+  const [overCat, setOverCat] = useState<string | null>(null);
+  const [armedCat, setArmedCat] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (data && !dragCat) {
+      setCatOrder([...data.categories].sort((a, b) => a.sort_order - b.sort_order).map((c) => c.catelog));
+    }
+  }, [data, dragCat]);
+
+  async function persistCategoryOrder(names: string[]) {
+    if (!data) return;
+    setBusy(true);
+    try {
+      for (let i = 0; i < names.length; i++) {
+        const cat = data.categories.find((c) => c.catelog === names[i]);
+        const v = (i + 1) * 10;
+        if (cat && cat.sort_order !== v) {
+          const res = await api(`/api/categories/${encodeURIComponent(names[i])}`, { method: 'PUT', body: JSON.stringify({ sort_order: v }) });
+          if (!res.ok) throw new Error('save failed');
+        }
+      }
+      setError('');
+      await refreshAll();
+    } catch {
+      setError('排序保存失败，请重试。');
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  }
 
   const load = useCallback(async () => {
     try {
@@ -119,6 +156,12 @@ export function ServerBookmarksAdmin() {
     cat,
     items: data.sites.filter((s) => s.catelog === cat),
   }));
+  const orderedCats = catOrder
+    .map((name) => data.categories.find((c) => c.catelog === name))
+    .filter((c): c is CategoryRow => Boolean(c));
+  for (const c of data.categories) {
+    if (!catOrder.includes(c.catelog)) orderedCats.push(c);
+  }
 
   return (
     <div className="sv-wrap">
@@ -243,10 +286,36 @@ export function ServerBookmarksAdmin() {
 
       <div className="sv-card">
         <h3>分类</h3>
-        {data.categories.map((c) => {
+        {orderedCats.map((c) => {
           const count = data.sites.filter((s) => s.catelog === c.catelog).length;
           return (
-            <div className="sv-row" key={c.catelog}>
+            <div
+              className={`sv-row sv-cat-row${dragCat === c.catelog ? ' is-dragging' : ''}${overCat === c.catelog && dragCat && dragCat !== c.catelog ? ' is-over' : ''}`}
+              key={c.catelog}
+              draggable={armedCat === c.catelog}
+              onDragStart={(e) => { setDragCat(c.catelog); e.dataTransfer.effectAllowed = 'move'; }}
+              onDragOver={(e) => { if (dragCat) { e.preventDefault(); setOverCat(c.catelog); } }}
+              onDrop={(e) => {
+                e.preventDefault();
+                if (dragCat && dragCat !== c.catelog) {
+                  const next = [...catOrder];
+                  next.splice(next.indexOf(dragCat), 1);
+                  next.splice(next.indexOf(c.catelog), 0, dragCat);
+                  setCatOrder(next);
+                  void persistCategoryOrder(next);
+                }
+                setDragCat(null); setOverCat(null); setArmedCat(null);
+              }}
+              onDragEnd={() => { setDragCat(null); setOverCat(null); setArmedCat(null); }}
+            >
+              <span
+                className="sv-grip"
+                title="拖动调整顺序"
+                onMouseDown={() => setArmedCat(c.catelog)}
+                onMouseUp={() => { if (!dragCat) setArmedCat(null); }}
+              >
+                <DotsSixVertical size={14} />
+              </span>
               <span className="sv-name">{c.catelog}</span>
               <span className="sv-url">{count} 条</span>
               <input
@@ -297,7 +366,7 @@ export function ServerBookmarksAdmin() {
           </button>
         </div>
         <p className="sv-note" style={{ marginTop: 8 }}>
-          新分类先在这里建好，再往里加书签，桌面会自动多出一页。分类改名暂未开放（会牵动桌面映射），需要改名找 COCO 处理。
+          分类顺序按住行首的拖动手柄上下拖动即可调整（数字框也能直接改）。新分类先在这里建好，再往里加书签。分类改名暂未开放（会牵动桌面映射），需要改名找 COCO 处理。
         </p>
       </div>
     </div>
