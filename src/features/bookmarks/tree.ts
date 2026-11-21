@@ -29,6 +29,7 @@ export function indexBookmarks(roots: BookmarkNode[]): Map<string, BookmarkMeta>
           url: node.url,
           parentId: node.parentId ?? '',
           path: folderPath,
+          ...(node.desc ? { desc: node.desc } : {}),
           ...(node.dateAdded ? { dateAdded: node.dateAdded } : {}),
         });
       }

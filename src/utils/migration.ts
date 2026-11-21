@@ -4,6 +4,7 @@ import type {
   AppSettings,
   BookmarkColumns,
   BookmarkSyncMode,
+  BookmarkViewMode,
   GlassIntensity,
   SearchEngineId,
   WallpaperId,
@@ -20,6 +21,7 @@ import type {
 import { SCHEMA_VERSION } from './constants';
 import {
   BOOKMARK_COLUMNS,
+  BOOKMARK_VIEW_MODES,
   createDefaultPomodoro,
   createDefaultSettings,
   GLASS_INTENSITIES,
@@ -147,6 +149,7 @@ function sanitizeSettings(raw: unknown, issues: string[]): AppSettings {
       ) as BookmarkColumns;
       return BOOKMARK_COLUMNS.includes(candidate) ? candidate : base.bookmarkColumns;
     })(),
+    bookmarkViewMode: oneOf<BookmarkViewMode>(value.bookmarkViewMode, BOOKMARK_VIEW_MODES, base.bookmarkViewMode),
     showDesktopDots: asBoolean(value.showDesktopDots, base.showDesktopDots),
     onboarded: asBoolean(value.onboarded, base.onboarded),
   };
@@ -393,6 +396,7 @@ function sanitizeBookmarkCache(raw: unknown, issues: string[]): Record<string, B
       path: Array.isArray(entry.path)
         ? entry.path.filter((part): part is string => typeof part === 'string').slice(0, 12)
         : [],
+      desc: asCleanString(entry.desc, 300),
       cachedAt: asPositiveNumber(entry.cachedAt, Date.now()),
     };
     count++;

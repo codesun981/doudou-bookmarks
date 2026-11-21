@@ -2,10 +2,11 @@ import type { CSSProperties, DragEvent, KeyboardEvent, MouseEvent } from 'react'
 import { WarningCircle } from '@phosphor-icons/react';
 import type { BookmarkView } from '../../stores/desktop-store';
 import { useFavicon } from '../../hooks/use-favicon';
-import { siteHue, siteLetter } from '../../utils/url';
+import { prettyUrl, siteHue, siteLetter } from '../../utils/url';
 
 interface BookmarkTileProps {
   view: BookmarkView;
+  variant?: 'tile' | 'card';
   desktopId?: string;
   pinned?: boolean;
   dragging?: boolean;
@@ -22,6 +23,7 @@ interface BookmarkTileProps {
 
 export function BookmarkTile({
   view,
+  variant = 'tile',
   desktopId,
   pinned = false,
   dragging = false,
@@ -46,7 +48,7 @@ export function BookmarkTile({
   }
 
   const commonProps = {
-    className: 'bookmark',
+    className: variant === 'card' ? 'bookmark bookmark-card glass' : 'bookmark',
     'data-missing': view.missing ? 'true' : 'false',
     'data-dragging': dragging ? 'true' : 'false',
     'data-drop': dropPosition ?? undefined,
@@ -110,6 +112,49 @@ export function BookmarkTile({
     </>
   );
 
+  const cardContent = (
+    <>
+      <span
+        className={`bookmark-icon bookmark-card__icon${favicon.loaded ? ' bookmark-icon--favicon' : ''}`}
+        style={{ '--tile-hue': hue } as CSSProperties}
+      >
+        {view.missing ? (
+          <WarningCircle size={18} weight="fill" />
+        ) : (
+          <>
+            {favicon.loaded ? null : siteLetter(view.title, view.url)}
+            {hasFavicon ? (
+              <img
+                className={`bookmark-favicon${favicon.loaded ? ' is-ready' : ''}`}
+                src={favicon.src ?? undefined}
+                alt=""
+                width={40}
+                height={40}
+                draggable={false}
+                decoding="async"
+                referrerPolicy="no-referrer"
+                onLoad={favicon.onLoad}
+                onError={favicon.onError}
+              />
+            ) : null}
+          </>
+        )}
+      </span>
+      <span className="bookmark-card__body">
+        <span className="bookmark-card__title">
+          <span className="bookmark-card__name">{view.title}</span>
+          {pinned ? <span className="bookmark-card__pin" aria-label="已钉在 Dock" /> : null}
+        </span>
+        {!view.missing ? (
+          <span className="bookmark-card__url">{prettyUrl(view.url)}</span>
+        ) : (
+          <span className="bookmark-card__url">书签已失效</span>
+        )}
+        {view.desc ? <span className="bookmark-card__desc">{view.desc}</span> : null}
+      </span>
+    </>
+  );
+
   function openMissingMenu(element: HTMLElement) {
     if (!onContextMenu) return;
     const rect = element.getBoundingClientRect();
@@ -132,14 +177,14 @@ export function BookmarkTile({
           }
         }}
       >
-        {content}
+        {variant === 'card' ? cardContent : content}
       </div>
     );
   }
 
   return (
     <a {...commonProps} href={view.url} data-desktop-id={desktopId}>
-      {content}
+      {variant === 'card' ? cardContent : content}
     </a>
   );
 }

@@ -3,6 +3,7 @@ export interface BookmarkNode {
   parentId?: string;
   title: string;
   url?: string;
+  desc?: string;
   children?: BookmarkNode[];
   dateAdded?: number;
 }
@@ -20,6 +21,8 @@ export interface BookmarkItemView {
   missing: boolean;
   /** Number of bookmarks inside a folder. Folders only. */
   count?: number;
+  /** 站点备注（服务端模式来自 D1 sites.desc）。 */
+  desc?: string;
 }
 
 export interface BookmarkMeta {
@@ -28,6 +31,7 @@ export interface BookmarkMeta {
   url: string;
   parentId: string;
   path: string[];
+  desc?: string;
   dateAdded?: number;
 }
 
@@ -45,6 +49,7 @@ export interface BookmarkCacheEntry {
   url: string;
   parentId: string;
   path: string[];
+  desc?: string;
   cachedAt: number;
 }
 

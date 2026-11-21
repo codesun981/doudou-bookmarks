@@ -394,7 +394,7 @@ async function buildTree(env) {
   };
   for (const r of orderRows.results || []) ensure(r.catelog);
   for (const s of siteRows.results || []) {
-    ensure(s.catelog).children.push({ id: String(s.id), title: s.name, url: s.url });
+    ensure(s.catelog).children.push({ id: String(s.id), title: s.name, url: s.url, desc: s.desc || '' });
   }
   return [{ id: 'root', title: '豆豆书签', children: [...folders.values()] }];
 }

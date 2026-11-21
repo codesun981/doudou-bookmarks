@@ -2,6 +2,7 @@ import type {
   AppSettings,
   BookmarkColumns,
   BookmarkSyncMode,
+  BookmarkViewMode,
   GlassIntensity,
   SearchEngineId,
   WallpaperId,
@@ -15,6 +16,7 @@ export const GLASS_INTENSITIES: GlassIntensity[] = ['low', 'medium', 'high'];
 export const SYNC_MODES: BookmarkSyncMode[] = ['import', 'follow'];
 export const NOTE_COLORS: NoteColor[] = ['paper', 'apricot', 'mint', 'lilac'];
 export const BOOKMARK_COLUMNS: BookmarkColumns[] = [1, 2, 3, 4, 5];
+export const BOOKMARK_VIEW_MODES: BookmarkViewMode[] = ['icons', 'cards'];
 
 export function createDefaultSettings(overrides: Partial<AppSettings> = {}): AppSettings {
   return {
@@ -28,6 +30,7 @@ export function createDefaultSettings(overrides: Partial<AppSettings> = {}): App
     defaultWallpaper: 'dusk',
     dockPinnedBookmarkIds: [],
     bookmarkColumns: 2,
+    bookmarkViewMode: 'icons',
     showDesktopDots: true,
     onboarded: false,
     ...overrides,

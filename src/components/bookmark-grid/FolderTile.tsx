@@ -3,6 +3,7 @@ import type { BookmarkView } from '../../stores/desktop-store';
 
 interface FolderTileProps {
   view: BookmarkView;
+  variant?: 'tile' | 'card';
   desktopId?: string;
   dragging?: boolean;
   dropPosition?: 'before' | 'after' | null;
@@ -16,6 +17,7 @@ interface FolderTileProps {
 
 export function FolderTile({
   view,
+  variant = 'tile',
   desktopId,
   dragging = false,
   dropPosition = null,
@@ -41,7 +43,9 @@ export function FolderTile({
 
   return (
     <div
-      className="bookmark bookmark--folder"
+      className={
+        variant === 'card' ? 'bookmark bookmark--folder bookmark-card glass' : 'bookmark bookmark--folder'
+      }
       data-missing={view.missing ? 'true' : 'false'}
       data-dragging={dragging ? 'true' : 'false'}
       data-drop={dropPosition ?? undefined}
@@ -67,15 +71,31 @@ export function FolderTile({
         : {})}
       {...(onDrop ? { onDrop: (event: DragEvent<HTMLElement>) => onDrop(view, event) } : {})}
     >
-      <span className="bookmark-icon bookmark-icon--folder">
-        <img src="/icons/mac/folder.png" alt="" width={54} height={54} draggable={false} />
-        {count > 0 ? (
-          <span className="bookmark-folder-count" aria-hidden="true">
-            {count}
+      {variant === 'card' ? (
+        <>
+          <span className="bookmark-icon bookmark-card__icon bookmark-icon--folder">
+            <img src="/icons/mac/folder.png" alt="" width={34} height={34} draggable={false} />
           </span>
-        ) : null}
-      </span>
-      <span className="bookmark-label">{view.title}</span>
+          <span className="bookmark-card__body">
+            <span className="bookmark-card__title">
+              <span className="bookmark-card__name">{view.title}</span>
+            </span>
+            <span className="bookmark-card__url">{count} 个书签</span>
+          </span>
+        </>
+      ) : (
+        <>
+          <span className="bookmark-icon bookmark-icon--folder">
+            <img src="/icons/mac/folder.png" alt="" width={54} height={54} draggable={false} />
+            {count > 0 ? (
+              <span className="bookmark-folder-count" aria-hidden="true">
+                {count}
+              </span>
+            ) : null}
+          </span>
+          <span className="bookmark-label">{view.title}</span>
+        </>
+      )}
     </div>
   );
 }

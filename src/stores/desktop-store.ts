@@ -145,6 +145,7 @@ export function resolveBookmarkView(state: WorkspaceState, id: string): Bookmark
       title: live.title,
       url: live.url,
       path: live.path,
+      desc: live.desc,
       missing: false,
     };
   }
@@ -158,6 +159,7 @@ export function resolveBookmarkView(state: WorkspaceState, id: string): Bookmark
       title: cached.title,
       url: cached.url,
       path: cached.path,
+      desc: cached.desc,
       missing: true,
     };
   }

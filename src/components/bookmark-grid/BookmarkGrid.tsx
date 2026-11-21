@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom';
 import {
   ArrowClockwise,
   ArrowRight,
+  Cards,
+  SquaresFour,
   ArrowSquareOut,
   Copy,
   FolderOpen,
@@ -24,7 +26,7 @@ import {
   workspaceStore,
 } from '../../stores/desktop-store';
 import { useStore } from '../../stores/create-store';
-import { useSettings } from '../../stores/settings-store';
+import { patchSettings, useSettings } from '../../stores/settings-store';
 import { setSettingsOpen, pushToast } from '../../stores/ui-store';
 import { reorderIds } from '../../features/bookmarks/tree';
 import { openUrl } from '../../services/browser-api';
@@ -168,6 +170,7 @@ export function BookmarkGrid() {
       className="bookmarks-section"
       aria-label={`${desktop.name}的书签`}
       data-columns={columns}
+      data-view={settings.bookmarkViewMode}
       style={
         {
           '--bookmark-columns': columns,
@@ -203,6 +206,28 @@ export function BookmarkGrid() {
           </div>
         </div>
         <div className="bookmarks-actions">
+          <div className="view-toggle" role="group" aria-label="书签显示方式">
+            <button
+              type="button"
+              className="view-toggle__btn"
+              aria-pressed={settings.bookmarkViewMode === 'icons'}
+              title="图标视图"
+              onClick={() => patchSettings({ bookmarkViewMode: 'icons' })}
+            >
+              <SquaresFour size={13} />
+              图标
+            </button>
+            <button
+              type="button"
+              className="view-toggle__btn"
+              aria-pressed={settings.bookmarkViewMode === 'cards'}
+              title="卡片视图"
+              onClick={() => patchSettings({ bookmarkViewMode: 'cards' })}
+            >
+              <Cards size={13} />
+              卡片
+            </button>
+          </div>
           {desktop.sourceFolderId ? (
             <button
               type="button"
@@ -243,6 +268,7 @@ export function BookmarkGrid() {
               <FolderTile
                 key={view.id}
                 view={view}
+                variant={settings.bookmarkViewMode === 'cards' ? 'card' : 'tile'}
                 desktopId={desktop.id}
                 dragging={dragPayload?.itemId === view.id}
                 dropPosition={
@@ -258,6 +284,7 @@ export function BookmarkGrid() {
               <BookmarkTile
                 key={view.id}
                 view={view}
+                variant={settings.bookmarkViewMode === 'cards' ? 'card' : 'tile'}
                 desktopId={desktop.id}
                 pinned={pinned.has(view.id)}
                 dragging={dragPayload?.itemId === view.id}
