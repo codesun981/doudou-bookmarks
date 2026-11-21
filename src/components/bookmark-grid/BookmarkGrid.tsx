@@ -8,6 +8,7 @@ import {
   ArrowSquareOut,
   Copy,
   FolderOpen,
+  PencilSimple,
   PushPin,
   Trash,
   WarningCircle,
@@ -34,6 +35,8 @@ import { prettyUrl } from '../../utils/url';
 import { BookmarkTile } from './BookmarkTile';
 import { FolderTile } from './FolderTile';
 import { FolderView } from './FolderView';
+import { Modal } from '../ui/Modal';
+import { isServerMode } from '../../services/server-mode';
 
 const DRAG_TYPE = 'application/x-glassdesk-bookmark';
 
@@ -59,6 +62,7 @@ export function BookmarkGrid() {
   const dragRef = useRef<DragPayload | null>(null);
   const [dropTarget, setDropTarget] = useState<{ id: string; after: boolean } | null>(null);
   const [context, setContext] = useState<ContextState | null>(null);
+  const [editTarget, setEditTarget] = useState<BookmarkView | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [folderStack, setFolderStack] = useState<string[]>([]);
 
@@ -331,6 +335,17 @@ export function BookmarkGrid() {
           others={others}
           pinned={pinned.has(context.view.id)}
           onClose={() => setContext(null)}
+          onEdit={
+            isServerMode() ? () => setEditTarget(context.view) : undefined
+          }
+        />
+      ) : null}
+
+      {editTarget ? (
+        <BookmarkEditModal
+          view={editTarget}
+          categories={[desktop.name, ...others.map((o) => o.name)]}
+          onClose={() => setEditTarget(null)}
         />
       ) : null}
     </section>
@@ -403,6 +418,7 @@ interface BookmarkContextMenuProps {
   others: Array<{ id: string; name: string }>;
   pinned: boolean;
   onClose: () => void;
+  onEdit?: () => void;
 }
 
 function BookmarkContextMenu({
@@ -411,6 +427,7 @@ function BookmarkContextMenu({
   others,
   pinned,
   onClose,
+  onEdit,
 }: BookmarkContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef(onClose);
@@ -489,6 +506,21 @@ function BookmarkContextMenu({
         <ArrowSquareOut size={14} />
         在新标签页打开
       </button>
+      {onEdit ? (
+        <button
+          type="button"
+          className="context-menu__item"
+          role="menuitem"
+          disabled={view.missing}
+          onClick={() => {
+            onClose();
+            onEdit();
+          }}
+        >
+          <PencilSimple size={14} />
+          编辑书签
+        </button>
+      ) : null}
       <button
         type="button"
         className="context-menu__item"
@@ -558,5 +590,95 @@ function BookmarkContextMenu({
       </button>
     </div>,
     document.body,
+  );
+}
+
+
+/** 云端模式下就地编辑单个书签：名称 / 网址 / 备注 / 分类，保存走 /api/bookmarks PUT 并重拉书签树。 */
+function BookmarkEditModal({
+  view,
+  categories,
+  onClose,
+}: {
+  view: BookmarkView;
+  categories: string[];
+  onClose: () => void;
+}) {
+  const [name, setName] = useState(view.title);
+  const [url, setUrl] = useState(view.url);
+  const [desc, setDesc] = useState(view.desc ?? '');
+  const [catelog, setCatelog] = useState(view.path[0] ?? categories[0] ?? '');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const save = async () => {
+    if (busy) return;
+    const n = name.trim();
+    const u = url.trim();
+    if (!n || !u) {
+      setError('名称和网址不能为空。');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      const res = await fetch(`/api/bookmarks/${view.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: n, url: u, desc: desc.trim(), catelog }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      await reimportBookmarks();
+      pushToast('书签已更新。', 'success');
+      onClose();
+    } catch {
+      setError('保存失败，请重试。');
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal open onClose={onClose} label={`编辑书签：${view.title}`}>
+      <form
+        className="bookmark-edit"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void save();
+        }}
+      >
+        <h3 className="bookmark-edit__title">编辑书签</h3>
+        <label className="bookmark-edit__field">
+          <span>名称</span>
+          <input value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+        </label>
+        <label className="bookmark-edit__field">
+          <span>网址</span>
+          <input value={url} onChange={(e) => setUrl(e.target.value)} inputMode="url" />
+        </label>
+        <label className="bookmark-edit__field">
+          <span>备注（卡片视图显示）</span>
+          <input value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="一句话说明这个站点" />
+        </label>
+        <label className="bookmark-edit__field">
+          <span>分类</span>
+          <select value={catelog} onChange={(e) => setCatelog(e.target.value)}>
+            {categories.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        </label>
+        {error ? <p className="bookmark-edit__error">{error}</p> : null}
+        <div className="bookmark-edit__actions">
+          <button type="button" className="btn btn--glass btn--small" onClick={onClose}>
+            取消
+          </button>
+          <button type="submit" className="btn btn--primary btn--small" disabled={busy}>
+            {busy ? '保存中…' : '保存'}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }

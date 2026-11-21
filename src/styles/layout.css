@@ -2065,3 +2065,44 @@
     min-width: 0;
   }
 }
+
+/* 书签就地编辑弹窗 */
+.bookmark-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(400px, 78vw);
+}
+.bookmark-edit__title {
+  margin: 0 0 2px;
+  font-size: 15px;
+  font-weight: 650;
+}
+.bookmark-edit__field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12.5px;
+  opacity: 0.85;
+}
+.bookmark-edit__field input,
+.bookmark-edit__field select {
+  padding: 8px 10px;
+  border-radius: 9px;
+  border: 1px solid rgb(128 140 160 / 35%);
+  background: rgb(128 140 160 / 12%);
+  color: inherit;
+  font-size: 13.5px;
+  opacity: 1;
+}
+.bookmark-edit__error {
+  margin: 0;
+  font-size: 12.5px;
+  color: #ff6b60;
+}
+.bookmark-edit__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 2px;
+}

@@ -30,7 +30,7 @@ export function createDefaultSettings(overrides: Partial<AppSettings> = {}): App
     defaultWallpaper: 'dusk',
     dockPinnedBookmarkIds: [],
     bookmarkColumns: 2,
-    bookmarkViewMode: 'icons',
+    bookmarkViewMode: 'cards',
     showDesktopDots: true,
     onboarded: false,
     ...overrides,
