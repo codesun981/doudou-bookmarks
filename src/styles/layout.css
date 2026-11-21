@@ -2161,3 +2161,12 @@
   line-height: 1.5;
   color: rgb(255 255 255 / 90%);
 }
+
+/* 卡片等高对齐：定高 + 备注恒占两行，备注长短/有无标签都不影响行高 */
+.bookmark-card {
+  height: 90px;
+  overflow: hidden;
+}
+.bookmark-card__desc {
+  min-height: calc(11.5px * 1.45 * 2);
+}
