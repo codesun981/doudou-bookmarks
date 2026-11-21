@@ -457,6 +457,7 @@ function ImgbedUploadSection({ activeDesktop }: { activeDesktop: Desktop | null 
 
 function AppearanceSection({ activeDesktop }: { activeDesktop: Desktop | null }) {
   const settings = useSettings();
+  const workspace = useWorkspace();
   const wallpaperId = activeDesktop?.wallpaper ?? settings.defaultWallpaper;
   const [imgbedUrl, setImgbedUrl] = useState(
     typeof wallpaperId === 'string' && wallpaperId.startsWith('url:') ? wallpaperId.slice(4) : '',
@@ -488,6 +489,19 @@ function AppearanceSection({ activeDesktop }: { activeDesktop: Desktop | null })
               <span className="wallpaper-swatch__label">{wallpaper.name}</span>
             </button>
           ))}
+        </div>
+        <div style={{ marginTop: 10 }}>
+          <button
+            type="button"
+            className="btn btn--glass btn--small"
+            disabled={!activeDesktop}
+            onClick={() => {
+              workspace.desktops.forEach((d) => setDesktopWallpaper(d.id, wallpaperId));
+              pushToast('当前壁纸已应用到所有桌面。', 'success');
+            }}
+          >
+            把当前壁纸应用到所有桌面
+          </button>
         </div>
         <div className="settings-row" style={{ borderBottom: 'none', paddingBottom: 0 }}>
           <div className="settings-row__text">
