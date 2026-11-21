@@ -12,6 +12,7 @@ const DEFAULT_SIZES: Record<WidgetType, { width: number; height: number }> = {
   countdown: { width: 300, height: 252 },
   pomodoro: { width: 300, height: 252 },
   search: { width: 300, height: 132 },
+  imgbed: { width: 300, height: 252 },
 };
 
 export interface ViewportSize {
@@ -89,6 +90,9 @@ export function createWidget(
   if (type === 'pomodoro') {
     return { ...baseWidget(type, desktopId, x, y, zIndex), type: 'pomodoro', settings: {} };
   }
+  if (type === 'imgbed') {
+    return { ...baseWidget(type, desktopId, x, y, zIndex), type: 'imgbed', settings: {} };
+  }
   return { ...baseWidget(type, desktopId, x, y, zIndex), type: 'search', settings: {} };
 }
 
@@ -150,5 +154,7 @@ export function widgetLabel(type: WidgetType): string {
       return '番茄钟';
     case 'search':
       return '快速搜索';
+    case 'imgbed':
+      return '图床上传';
   }
 }

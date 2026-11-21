@@ -1,9 +1,10 @@
 import { useEffect, useRef } from 'react';
 import type { CSSProperties } from 'react';
-import { Hourglass, MagnifyingGlass, NotePencil, Timer, type Icon } from '@phosphor-icons/react';
+import { Hourglass, MagnifyingGlass, NotePencil, Timer, UploadSimple, type Icon } from '@phosphor-icons/react';
 import type { BookmarkView } from '../../stores/desktop-store';
 import type { WidgetInstance, WidgetType } from '../../types/widget';
 import { openUrl } from '../../services/browser-api';
+import { isServerMode } from '../../services/server-mode';
 import { useStore } from '../../stores/create-store';
 import { addWidget, useActiveWidgets, useWorkspace } from '../../stores/desktop-store';
 import { useSettings } from '../../stores/settings-store';
@@ -220,6 +221,7 @@ const WIDGET_OPTIONS: Array<{ type: WidgetType; title: string; hint: string; ico
   { type: 'countdown', title: '倒计时', hint: '用绝对时间记录目标日期', icon: Hourglass },
   { type: 'pomodoro', title: '番茄钟', hint: '专注与休息交替', icon: Timer },
   { type: 'search', title: '快速搜索', hint: '桌面上的一行搜索框', icon: MagnifyingGlass },
+  { type: 'imgbed', title: '图床上传', hint: '拖图上传到图床，可直接设壁纸', icon: UploadSimple },
 ];
 
 function WidgetPalette({ widgets }: { widgets: WidgetInstance[] }) {
@@ -248,6 +250,7 @@ function WidgetPalette({ widgets }: { widgets: WidgetInstance[] }) {
     <div ref={paletteRef} className="widget-palette glass glass--material" role="menu">
       <div className="widget-palette__head">添加小组件</div>
       {WIDGET_OPTIONS.map((option) => {
+        if (option.type === 'imgbed' && !isServerMode()) return null;
         const Icon = option.icon;
         const disabled = option.type === 'clock' && widgets.some((widget) => widget.type === 'clock');
         return (

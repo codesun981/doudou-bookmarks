@@ -28,6 +28,7 @@ import { SEARCH_ENGINES } from '../../features/search/search';
 import { BOOKMARK_COLUMNS } from '../../utils/defaults';
 import { downloadBackup, importBackupFile } from '../../features/settings/backup';
 import { storageService } from '../../services/storage-service';
+import { uploadToImgbed } from '../../services/imgbed';
 import { isServerMode } from '../../services/server-mode';
 import { ServerBookmarksAdmin } from './ServerBookmarksAdmin';
 import {
@@ -319,16 +320,13 @@ function ImgbedUploadSection({ activeDesktop }: { activeDesktop: Desktop | null 
   async function upload() {
     if (!file) return;
     setStatus('uploading');
-    try {
-      const form = new FormData();
-      form.append('file', file);
-      const res = await fetch('/api/imgbed/upload', { method: 'POST', body: form });
-      const body = (await res.json()) as { configured: boolean; url?: string; error?: string };
-      if (!body.configured) { setStatus('unconfigured'); return; }
-      if (!res.ok || !body.url) { setStatus('error'); return; }
-      setResultUrl(body.url);
-      setStatus('done');
-    } catch { setStatus('error'); }
+    const result = await uploadToImgbed(file);
+    if (!result.ok) {
+      setStatus(result.reason === 'unconfigured' ? 'unconfigured' : 'error');
+      return;
+    }
+    setResultUrl(result.url);
+    setStatus('done');
   }
 
   return (
