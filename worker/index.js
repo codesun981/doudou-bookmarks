@@ -220,11 +220,11 @@ function linksJson(v, fallbackRaw) {
 async function adminData(env) {
   const [sites, cats] = await Promise.all([
     env.DB.prepare('SELECT id, name, url, desc, tag, deploy, links, logo, catelog, sort_order, in_dock FROM sites ORDER BY catelog, sort_order ASC, id ASC').all(),
-    env.DB.prepare('SELECT catelog, sort_order FROM category_orders ORDER BY sort_order ASC').all(),
+    env.DB.prepare('SELECT catelog, sort_order, in_single FROM category_orders ORDER BY sort_order ASC').all(),
   ]);
   return {
     sites: (sites.results || []).map((s) => ({ ...s, links: parseLinks(s.links) })),
-    categories: cats.results || [],
+    categories: (cats.results || []).map((c) => ({ ...c, in_single: c.in_single === 1 ? 1 : 0 })),
   };
 }
 async function readJsonBody(request) {
@@ -271,6 +271,16 @@ async function handleApi(request, env, path) {
     if (b.sort_order != null) {
       await env.DB.prepare('INSERT INTO category_orders (catelog, sort_order) VALUES (?, ?) ON CONFLICT(catelog) DO UPDATE SET sort_order = excluded.sort_order')
         .bind(name, Number(b.sort_order)).run();
+    }
+    if (b.in_single != null) {
+      const cur = await env.DB.prepare('SELECT sort_order FROM category_orders WHERE catelog = ?').bind(name).first();
+      if (cur) {
+        await env.DB.prepare('UPDATE category_orders SET in_single = ? WHERE catelog = ?').bind(b.in_single ? 1 : 0, name).run();
+      } else {
+        const max = await env.DB.prepare('SELECT COALESCE(MAX(sort_order), 0) AS m FROM category_orders').first();
+        await env.DB.prepare('INSERT INTO category_orders (catelog, sort_order, in_single) VALUES (?, ?, ?)')
+          .bind(name, (max?.m || 0) + 10, b.in_single ? 1 : 0).run();
+      }
     }
     return json({ ok: true });
   }
@@ -409,14 +419,14 @@ async function serveWallpaper(env) {
 }
 // D1 书签 → GlassDesk 的 BookmarkNode 树：根 → 分类文件夹 → 书签叶子
 async function buildTree(env) {
-  const orderRows = await env.DB.prepare('SELECT catelog, sort_order FROM category_orders ORDER BY sort_order ASC').all();
+  const orderRows = await env.DB.prepare('SELECT catelog, sort_order, in_single FROM category_orders ORDER BY sort_order ASC').all();
   const siteRows = await env.DB.prepare('SELECT id, name, url, desc, tag, deploy, links, logo, catelog, sort_order FROM sites ORDER BY sort_order ASC, id ASC').all();
   const folders = new Map();
   const ensure = (name) => {
-    if (!folders.has(name)) folders.set(name, { id: `cat:${name}`, title: name, children: [] });
+    if (!folders.has(name)) folders.set(name, { id: `cat:${name}`, title: name, inSingle: false, children: [] });
     return folders.get(name);
   };
-  for (const r of orderRows.results || []) ensure(r.catelog);
+  for (const r of orderRows.results || []) ensure(r.catelog).inSingle = r.in_single === 1;
   for (const s of siteRows.results || []) {
     ensure(s.catelog).children.push({ id: String(s.id), title: s.name, url: s.url, desc: s.desc || '', tag: s.tag || '', deploy: s.deploy || '', links: parseLinks(s.links) });
   }

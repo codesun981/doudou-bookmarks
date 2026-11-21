@@ -14,6 +14,8 @@ export interface BookmarkNode {
   deploy?: string;
   links?: BookmarkLink[];
   children?: BookmarkNode[];
+  /** 分类文件夹专用：是否在一页全览中显示（D1 category_orders.in_single）。 */
+  inSingle?: boolean;
   dateAdded?: number;
 }
 

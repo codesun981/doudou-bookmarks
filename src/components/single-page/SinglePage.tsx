@@ -18,7 +18,18 @@ import { BookmarkEditModal, LinkChooserModal } from '../bookmark-grid/BookmarkGr
 import { Segmented } from '../ui/Controls';
 
 /** 分区顺序：按打开频率（用户 2026-11-21 批准的推荐序），新分类追加在后。 */
-export const PREFERRED_ORDER = ['我的站点', '工具服务', '1Panel', '3x-ui', '内网服务'];
+export const PREFERRED_ORDER = [
+  'mini',
+  'CF Worker',
+  'CF Pages',
+  'Vercel',
+  'GitHub Pages',
+  'aws-two',
+  'aws-ohio',
+  '1Panel',
+  '3x-ui',
+  '内网服务',
+];
 const COLLAPSE_KEY = 'glassdesk:single-collapsed:v1';
 
 function metaToView(meta: BookmarkMeta): BookmarkView {
@@ -100,26 +111,26 @@ export function SinglePage() {
   }, [all]);
   const categories = useMemo(() => sections.map((s) => s.name), [sections]);
 
-  // 一页白名单：首次出现的新分类——若白名单已初始化，自动排除（只进多桌面）。
-  const known = settings.singleKnownCategories;
-  const excluded = settings.singleExcludedCategories;
-  useEffect(() => {
-    if (!categories.length) return;
-    const unseen = categories.filter((c) => !known.includes(c));
-    if (!unseen.length) return;
-    if (known.length === 0) {
-      patchSettings({ singleKnownCategories: categories });
-    } else {
-      patchSettings({
-        singleKnownCategories: [...known, ...unseen],
-        singleExcludedCategories: [...new Set([...excluded, ...unseen])],
-      });
-    }
-  }, [categories, known, excluded]);
+  // 一页白名单：以 D1 category_orders.in_single 为准（树文件夹节点携带），
+  // 不再存 ui_state 设置——避免旧客户端回存把名单冲掉（2026-11-21 事故后迁移）。
+  const inSingleMap = useMemo(() => {
+    const map = new Map<string, boolean>();
+    const walk = (nodes: typeof workspace.bookmarkTree) => {
+      for (const n of nodes) {
+        if (n.id?.startsWith('cat:')) map.set(n.title, n.inSingle === true);
+        if (n.children) walk(n.children);
+      }
+    };
+    walk(workspace.bookmarkTree);
+    return map;
+  }, [workspace.bookmarkTree]);
 
   const visibleSections = useMemo(
-    () => sections.filter((s) => !excluded.includes(s.name)),
-    [sections, excluded],
+    () =>
+      !server || inSingleMap.size === 0
+        ? sections
+        : sections.filter((s) => inSingleMap.get(s.name) === true),
+    [sections, inSingleMap, server],
   );
   const visibleItems = useMemo(
     () => visibleSections.flatMap((s) => s.items),

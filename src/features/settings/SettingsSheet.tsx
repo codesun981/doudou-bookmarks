@@ -35,7 +35,6 @@ import {
   addDesktopFromFolder,
   cleanupMissingBookmarks,
   deleteDesktop,
-  getSearchableBookmarks,
   reimportBookmarks,
   renameDesktop,
   reorderDesktop,
@@ -45,7 +44,6 @@ import {
 } from '../../stores/desktop-store';
 import { patchSettings, useSettings } from '../../stores/settings-store';
 import { PREFERRED_ORDER } from '../../components/single-page/SinglePage';
-import { categoryOf } from '../../features/bookmarks/tree';
 import {
   setSettingsOpen,
   useUiState,
@@ -461,24 +459,34 @@ function ImgbedUploadSection({ activeDesktop }: { activeDesktop: Desktop | null 
 function AppearanceSection({ activeDesktop }: { activeDesktop: Desktop | null }) {
   const settings = useSettings();
   const workspace = useWorkspace();
-  const singleCatNames = useMemo(() => {
-    const seen: string[] = [];
-    for (const m of getSearchableBookmarks(workspace)) {
-      const c = categoryOf(m);
-      if (c && !seen.includes(c)) seen.push(c);
-    }
+  const singleCats = useMemo(() => {
+    const list: { name: string; inSingle: boolean }[] = [];
+    const walk = (nodes: typeof workspace.bookmarkTree) => {
+      for (const n of nodes) {
+        if (n.id?.startsWith('cat:')) list.push({ name: n.title, inSingle: n.inSingle === true });
+        if (n.children) walk(n.children);
+      }
+    };
+    walk(workspace.bookmarkTree);
     return [
-      ...PREFERRED_ORDER.filter((n) => seen.includes(n)),
-      ...seen.filter((n) => !PREFERRED_ORDER.includes(n)),
+      ...PREFERRED_ORDER.filter((n) => list.some((c) => c.name === n)).map(
+        (n) => list.find((c) => c.name === n)!,
+      ),
+      ...list.filter((c) => !PREFERRED_ORDER.includes(c.name)),
     ];
   }, [workspace]);
-  const toggleSingleCat = (name: string, show: boolean) => {
-    patchSettings({
-      singleKnownCategories: [...new Set([...settings.singleKnownCategories, ...singleCatNames])],
-      singleExcludedCategories: show
-        ? settings.singleExcludedCategories.filter((c) => c !== name)
-        : [...new Set([...settings.singleExcludedCategories, name])],
-    });
+  const toggleSingleCat = async (name: string, show: boolean) => {
+    try {
+      const res = await fetch(`/api/categories/${encodeURIComponent(name)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ in_single: show ? 1 : 0 }),
+      });
+      if (!res.ok) throw new Error('toggle failed');
+      await reimportBookmarks();
+    } catch {
+      pushToast('设置失败，请重试。', 'error');
+    }
   };
   const wallpaperId = activeDesktop?.wallpaper ?? settings.defaultWallpaper;
   const [imgbedUrl, setImgbedUrl] = useState(
@@ -587,13 +595,13 @@ function AppearanceSection({ activeDesktop }: { activeDesktop: Desktop | null })
             <h3>在一页全览中显示的分类</h3>
             <p>只有打开的分类会进入一页全览（一页只放自家服务）；以后导入浏览器书签产生的新分类默认关闭，只出现在多桌面里。</p>
           </div>
-          {singleCatNames.map((name) => (
-            <div key={name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '3px 0' }}>
-              <span style={{ fontSize: 13 }}>{name}</span>
+          {singleCats.map((cat) => (
+            <div key={cat.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '3px 0' }}>
+              <span style={{ fontSize: 13 }}>{cat.name}</span>
               <Switch
-                label={`${name} 显示在一页全览`}
-                checked={!settings.singleExcludedCategories.includes(name)}
-                onChange={(show) => toggleSingleCat(name, show)}
+                label={`${cat.name} 显示在一页全览`}
+                checked={cat.inSingle}
+                onChange={(show) => void toggleSingleCat(cat.name, show)}
               />
             </div>
           ))}
