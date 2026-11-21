@@ -14,6 +14,7 @@ import { Wallpaper } from '../components/desktop/Wallpaper';
 import { ErrorScreen } from '../components/desktop/ErrorScreen';
 import { OnboardingScreen } from '../components/desktop/OnboardingScreen';
 import { DesktopStage } from '../components/desktop/DesktopStage';
+import { SinglePage } from '../components/single-page/SinglePage';
 import { DesktopDots } from '../components/desktop/DesktopDots';
 import { Dock } from '../components/dock/Dock';
 import { StatusBar } from '../components/status-bar/StatusBar';
@@ -29,7 +30,8 @@ export function App() {
   const status = useWorkspaceStatus();
   const desktop = useActiveDesktop();
   const settings = useSettings();
-  const wallpaper = getWallpaper(desktop?.wallpaper ?? settings.defaultWallpaper);
+  const single = settings.layoutMode === 'single';
+  const wallpaper = getWallpaper(single ? settings.defaultWallpaper : (desktop?.wallpaper ?? settings.defaultWallpaper));
 
   useEffect(() => {
     void bootstrapWorkspace();
@@ -124,8 +126,8 @@ export function App() {
       {status === 'ready' ? (
         <>
           <StatusBar />
-          <DesktopStage />
-          <DesktopDots />
+          {single ? <SinglePage /> : <DesktopStage />}
+          {single ? null : <DesktopDots />}
           <Dock />
           <SettingsSheet />
         </>

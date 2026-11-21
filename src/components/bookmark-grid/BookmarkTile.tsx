@@ -148,6 +148,11 @@ export function BookmarkTile({
             ) : null}
           </>
         )}
+        {multi ? (
+          <span className="bookmark-badge" aria-hidden="true">
+            +{view.links!.length}
+          </span>
+        ) : null}
       </span>
       <span className="bookmark-card__body">
         <span className="bookmark-card__title">
@@ -155,9 +160,6 @@ export function BookmarkTile({
           {pinned ? <span className="bookmark-card__pin" aria-label="已钉在 Dock" /> : null}
           {view.tag ? <span className="bookmark-card__tag">{view.tag}</span> : null}
           {view.deploy ? <span className="bookmark-card__deploy">{view.deploy}</span> : null}
-          {multi ? (
-            <span className="bookmark-card__multi">{view.links!.length + 1} 个入口</span>
-          ) : null}
         </span>
         {!view.missing ? (
           <span className="bookmark-card__url">{prettyUrl(view.url)}</span>

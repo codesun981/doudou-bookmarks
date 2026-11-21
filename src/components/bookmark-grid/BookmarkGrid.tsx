@@ -704,7 +704,7 @@ function BookmarkContextMenu({
 
 
 /** 多链接书签的入口选择弹窗：主链接 + 全部副链接，点哪个开哪个（新标签）。 */
-function LinkChooserModal({ view, onClose }: { view: BookmarkView; onClose: () => void }) {
+export function LinkChooserModal({ view, onClose }: { view: BookmarkView; onClose: () => void }) {
   const entries: Array<{ label: string; url: string; primary: boolean }> = [
     { label: '主链接', url: view.url, primary: true },
     ...(view.links ?? []).map((link) => ({
@@ -749,7 +749,7 @@ interface LibraryItem {
 }
 
 /** 云端模式下就地编辑单个书签：名称 / 网址 / 备注 / 分类，保存走 /api/bookmarks PUT 并重拉书签树。 */
-function BookmarkEditModal({
+export function BookmarkEditModal({
   view,
   categories,
   defaultCategory,

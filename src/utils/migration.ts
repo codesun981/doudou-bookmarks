@@ -6,6 +6,7 @@ import type {
   BookmarkSyncMode,
   BookmarkViewMode,
   MultiLinkClick,
+  LayoutMode,
   GlassIntensity,
   SearchEngineId,
   WallpaperId,
@@ -26,7 +27,7 @@ import {
   createDefaultPomodoro,
   createDefaultSettings,
   GLASS_INTENSITIES,
-  MULTI_LINK_CLICKS,
+  MULTI_LINK_CLICKS, LAYOUT_MODES,
   NOTE_COLORS,
   SEARCH_ENGINE_IDS,
   SYNC_MODES,
@@ -157,6 +158,7 @@ function sanitizeSettings(raw: unknown, issues: string[]): AppSettings {
     multiLinkClick: oneOf<MultiLinkClick>(value.multiLinkClick, MULTI_LINK_CLICKS, base.multiLinkClick),
     multiLinkQuickButton: asBoolean(value.multiLinkQuickButton, base.multiLinkQuickButton),
     preloadWallpapers: asBoolean(value.preloadWallpapers, base.preloadWallpapers),
+    layoutMode: oneOf<LayoutMode>(value.layoutMode, LAYOUT_MODES, base.layoutMode),
   };
 }
 

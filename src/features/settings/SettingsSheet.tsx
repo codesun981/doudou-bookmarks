@@ -19,7 +19,7 @@ import {
   X,
 } from '@phosphor-icons/react';
 import type { Desktop } from '../../types/desktop';
-import type { BookmarkColumns } from '../../types/settings';
+import type { BookmarkColumns, LayoutMode } from '../../types/settings';
 import type { SettingsSection } from '../../stores/ui-store';
 import { getWallpaper, WALLPAPERS } from '../../features/layout/wallpapers';
 import { countBookmarksInItems } from '../../features/bookmarks/folders';
@@ -546,6 +546,20 @@ function AppearanceSection({ activeDesktop }: { activeDesktop: Desktop | null })
           </div>
           <span className="chip">{activeDesktop?.name ?? '没有桌面'}</span>
         </div>
+        <SettingRow
+          title="布局模式"
+          description="一页全览：全部书签按分类分区分段排在同一页滚动浏览；多桌面：按分类分桌面、滚轮/点选切换。一页模式下小组件暂不显示。"
+        >
+          <Segmented
+            label="布局模式"
+            value={settings.layoutMode}
+            options={[
+              { value: 'single', label: '一页全览' },
+              { value: 'desktops', label: '多桌面' },
+            ]}
+            onChange={(value) => patchSettings({ layoutMode: value as LayoutMode })}
+          />
+        </SettingRow>
         <SettingRow
           title="预加载全部壁纸"
           description="打开页面后趁空闲把每个桌面的壁纸提前下载到浏览器缓存，切换桌面时背景立即显示、不再现拉现等。流量敏感时可关。"

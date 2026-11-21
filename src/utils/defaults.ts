@@ -5,6 +5,7 @@ import type {
   BookmarkViewMode,
   GlassIntensity,
   MultiLinkClick,
+  LayoutMode,
   SearchEngineId,
   WallpaperId,
 } from '../types/settings';
@@ -19,6 +20,7 @@ export const NOTE_COLORS: NoteColor[] = ['paper', 'apricot', 'mint', 'lilac'];
 export const BOOKMARK_COLUMNS: BookmarkColumns[] = [1, 2, 3, 4, 5];
 export const BOOKMARK_VIEW_MODES: BookmarkViewMode[] = ['icons', 'cards'];
 export const MULTI_LINK_CLICKS: MultiLinkClick[] = ['choose', 'primary'];
+export const LAYOUT_MODES: LayoutMode[] = ['desktops', 'single'];
 
 export function createDefaultSettings(overrides: Partial<AppSettings> = {}): AppSettings {
   return {
@@ -38,6 +40,7 @@ export function createDefaultSettings(overrides: Partial<AppSettings> = {}): App
     multiLinkClick: 'choose',
     multiLinkQuickButton: true,
     preloadWallpapers: true,
+    layoutMode: 'single',
     ...overrides,
   };
 }

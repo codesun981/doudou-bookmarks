@@ -8,6 +8,8 @@ export type BookmarkColumns = 1 | 2 | 3 | 4 | 5;
 export type BookmarkViewMode = 'icons' | 'cards';
 /** 多链接书签的卡片点击行为：choose=弹窗选入口，primary=直达主链接。 */
 export type MultiLinkClick = 'choose' | 'primary';
+/** 布局模式：desktops=多桌面切换，single=一页全览分区。 */
+export type LayoutMode = 'desktops' | 'single';
 
 export interface AppSettings {
   schemaVersion: number;
@@ -26,4 +28,5 @@ export interface AppSettings {
   multiLinkClick: MultiLinkClick;
   multiLinkQuickButton: boolean;
   preloadWallpapers: boolean;
+  layoutMode: LayoutMode;
 }
