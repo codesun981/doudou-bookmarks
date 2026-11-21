@@ -708,7 +708,7 @@ export function LinkChooserModal({ view, onClose }: { view: BookmarkView; onClos
   const entries: Array<{ label: string; url: string; primary: boolean }> = [
     { label: '主链接', url: view.url, primary: true },
     ...(view.links ?? []).map((link) => ({
-      label: link.label || prettyUrl(link.url),
+      label: link.label || link.url,
       url: link.url,
       primary: false,
     })),
@@ -732,7 +732,7 @@ export function LinkChooserModal({ view, onClose }: { view: BookmarkView; onClos
                 {entry.label}
                 {entry.primary ? <span className="link-chooser__badge">主</span> : null}
               </span>
-              <span className="link-chooser__url">{prettyUrl(entry.url)}</span>
+              <span className="link-chooser__url">{entry.url}</span>
               <ArrowSquareOut size={15} />
             </button>
             <button
