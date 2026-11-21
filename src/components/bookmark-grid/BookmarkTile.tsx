@@ -195,6 +195,12 @@ export function BookmarkTile({
           <Copy size={14} />
         </button>
       ) : null}
+      {multi ? (
+        <span className="bookmark-card__multi" aria-hidden="true">
+          <List size={11} />
+          {view.links!.length + 1} 个入口
+        </span>
+      ) : null}
       {multi && settings.multiLinkQuickButton ? (
         <button
           type="button"
