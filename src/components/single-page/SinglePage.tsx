@@ -83,8 +83,6 @@ export function SinglePage() {
   const pageRef = useRef<HTMLDivElement>(null);
   const sectionRefs = useRef(new Map<string, HTMLElement>());
   const [activeSec, setActiveSec] = useState<string | null>(null);
-  const [deploySel, setDeploySel] = useState<string | null>(null);
-  const [tagSel, setTagSel] = useState<string | null>(null);
 
   const sections = useMemo(() => {
     const byCat = new Map<string, BookmarkMeta[]>();
@@ -128,31 +126,7 @@ export function SinglePage() {
     [visibleSections],
   );
 
-  const deployFacets = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const m of visibleItems) if (m.deploy) map.set(m.deploy, (map.get(m.deploy) ?? 0) + 1);
-    return [...map.entries()].sort((a, b) => b[1] - a[1]);
-  }, [visibleItems]);
-  const tagFacets = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const m of visibleItems) if (m.tag) map.set(m.tag, (map.get(m.tag) ?? 0) + 1);
-    return [...map.entries()].sort((a, b) => b[1] - a[1]);
-  }, [visibleItems]);
-
-  const filtering = deploySel !== null || tagSel !== null;
-  const matches = (m: BookmarkMeta): boolean => {
-    if (deploySel && m.deploy !== deploySel) return false;
-    if (tagSel && m.tag !== tagSel) return false;
-    return true;
-  };
-  const displaySections = visibleSections
-    .map((s) => ({ ...s, shown: filtering ? s.items.filter(matches) : s.items }))
-    .filter((s) => !filtering || s.shown.length > 0);
-  const matchCount = filtering ? displaySections.reduce((n, s) => n + s.shown.length, 0) : visibleItems.length;
-  const clearFilters = () => {
-    setDeploySel(null);
-    setTagSel(null);
-  };
+  const displaySections = visibleSections.map((s) => ({ ...s, shown: s.items }));
 
   useEffect(() => {
     try {
@@ -305,59 +279,14 @@ export function SinglePage() {
               onClick={() => scrollToSec(s.name)}
             >
               {s.name}
-              <span className="single-nav__count">{filtering ? s.shown.length : s.items.length}</span>
+              <span className="single-nav__count">{s.items.length}</span>
             </button>
           ))}
         </nav>
       </div>
 
-      {deployFacets.length || tagFacets.length || filtering ? (
-        <div className="single-facets">
-          {deployFacets.length ? (
-            <span className="single-facets__group">
-              <span className="single-facets__label">部署</span>
-              {deployFacets.map(([name, count]) => (
-                <button
-                  key={name}
-                  type="button"
-                  className="facet-chip"
-                  data-active={deploySel === name}
-                  onClick={() => setDeploySel(deploySel === name ? null : name)}
-                >
-                  {name} · {count}
-                </button>
-              ))}
-            </span>
-          ) : null}
-          {tagFacets.length ? (
-            <span className="single-facets__group">
-              <span className="single-facets__label">标签</span>
-              {tagFacets.map(([name, count]) => (
-                <button
-                  key={name}
-                  type="button"
-                  className="facet-chip"
-                  data-active={tagSel === name}
-                  onClick={() => setTagSel(tagSel === name ? null : name)}
-                >
-                  {name} · {count}
-                </button>
-              ))}
-            </span>
-          ) : null}
-          {filtering ? (
-            <span className="single-facets__result">
-              筛出 {matchCount} / {visibleItems.length}
-              <button type="button" className="facet-clear" onClick={clearFilters}>
-                清除筛选
-              </button>
-            </span>
-          ) : null}
-        </div>
-      ) : null}
-
       {displaySections.map((section) => {
-        const isCollapsed = !filtering && collapsed.has(section.name);
+        const isCollapsed = collapsed.has(section.name);
         return (
           <section
             key={section.name}
@@ -377,9 +306,7 @@ export function SinglePage() {
               >
                 <FolderOpen size={19} weight="fill" className="single-section__folder" />
                 <span className="single-section__name">{section.name}</span>
-                <span className="single-section__count">
-                  {filtering ? `命中 ${section.shown.length} / ${section.items.length}` : `${section.items.length} 个书签`}
-                </span>
+                <span className="single-section__count">{section.items.length} 个书签</span>
                 <CaretDown
                   size={15}
                   className={`single-section__caret${isCollapsed ? ' single-section__caret--closed' : ''}`}
@@ -412,7 +339,7 @@ export function SinglePage() {
                     />
                   );
                 })}
-                {server && !filtering ? (
+                {server ? (
                   <button
                     type="button"
                     className="single-add"
@@ -427,10 +354,6 @@ export function SinglePage() {
           </section>
         );
       })}
-      {filtering && matchCount === 0 ? (
-        <p className="single-empty">没有符合筛选条件的书签，清除筛选试试。</p>
-      ) : null}
-
       {linkTarget ? <LinkChooserModal view={linkTarget} onClose={() => setLinkTarget(null)} /> : null}
       {editing ? (
         <BookmarkEditModal

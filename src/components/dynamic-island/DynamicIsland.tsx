@@ -92,9 +92,12 @@ export function DynamicIsland() {
       url: entry.url,
       parentId: entry.parentId,
       path: entry.path,
+      ...(entry.tag ? { tag: entry.tag } : {}),
+      ...(entry.deploy ? { deploy: entry.deploy } : {}),
     }));
   });
   const [query, setQuery] = useState('');
+  const [tagSel, setTagSel] = useState<string | null>(null);
   const [selected, setSelected] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const shellRef = useRef<HTMLDivElement>(null);
@@ -102,26 +105,47 @@ export function DynamicIsland() {
 
   const engine = getSearchEngine(settings.searchEngine);
   const trimmedQuery = query.trim();
+  const tagFacets = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const m of bookmarks) if (m.tag) map.set(m.tag, (map.get(m.tag) ?? 0) + 1);
+    return [...map.entries()].sort((a, b) => b[1] - a[1]);
+  }, [bookmarks]);
+  const tagBookmarks = useMemo(() => {
+    if (!tagSel) return [];
+    return bookmarks
+      .filter((m) => m.tag === tagSel)
+      .sort((a, b) => a.title.localeCompare(b.title, 'zh-CN'));
+  }, [tagSel, bookmarks]);
   const bookmarkHits = useMemo(
-    () => (trimmedQuery ? searchBookmarks(trimmedQuery, bookmarks, 7) : []),
-    [trimmedQuery, bookmarks],
+    () =>
+      trimmedQuery
+        ? searchBookmarks(
+            trimmedQuery,
+            tagSel ? bookmarks.filter((m) => m.tag === tagSel) : bookmarks,
+            7,
+          )
+        : [],
+    [trimmedQuery, bookmarks, tagSel],
   );
   const desktopHits = useMemo(
     () => (trimmedQuery ? searchDesktops(trimmedQuery, desktops, 2) : []),
     [trimmedQuery, desktops],
   );
   const rows = useMemo<IslandRow[]>(() => {
-    if (!trimmedQuery) return [];
+    if (!trimmedQuery) {
+      if (!tagSel) return [];
+      return tagBookmarks.map((meta) => ({ kind: 'bookmark' as const, meta }));
+    }
     const result: IslandRow[] = [];
     for (const desktop of desktopHits) result.push({ kind: 'desktop', desktop });
     for (const hit of bookmarkHits) result.push({ kind: 'bookmark', meta: hit.meta });
     result.push({ kind: 'query' });
     return result;
-  }, [trimmedQuery, desktopHits, bookmarkHits]);
+  }, [trimmedQuery, desktopHits, bookmarkHits, tagSel, tagBookmarks]);
 
   useEffect(() => {
     setSelected(0);
-  }, [query]);
+  }, [query, tagSel]);
 
   useEffect(() => {
     if (!open) return;
@@ -144,6 +168,7 @@ export function DynamicIsland() {
   function closeIsland() {
     setSearchOpen(false);
     setQuery('');
+    setTagSel(null);
     setSelected(0);
     inputRef.current?.blur();
   }
@@ -262,9 +287,43 @@ export function DynamicIsland() {
 
       <div className="island-panel" aria-hidden={!open} inert={!open}>
         <div className="island-panel__inner">
-          {trimmedQuery ? (
+          {tagFacets.length > 0 ? (
+            <div className="island-tags" role="group" aria-label="按标签筛选">
+              <span className="island-tags__label">标签</span>
+              {tagFacets.map(([name, count]) => (
+                <button
+                  key={name}
+                  type="button"
+                  className="island-tag"
+                  data-active={tagSel === name}
+                  onClick={() => {
+                    setTagSel(tagSel === name ? null : name);
+                    inputRef.current?.focus();
+                  }}
+                >
+                  {name} · {count}
+                </button>
+              ))}
+              {tagSel ? (
+                <button
+                  type="button"
+                  className="island-tag island-tag--clear"
+                  onClick={() => {
+                    setTagSel(null);
+                    inputRef.current?.focus();
+                  }}
+                >
+                  清除
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+          {trimmedQuery || tagSel ? (
             <>
               <div className="island-results scroll-area" id="island-results" role="listbox">
+                {!trimmedQuery && tagSel ? (
+                  <div className="island-label">标签「{tagSel}」· {tagBookmarks.length} 个书签</div>
+                ) : null}
                 {desktopHits.length > 0 ? <div className="island-label">桌面</div> : null}
                 {rows.map((row, index) => {
                   if (row.kind === 'desktop') {
