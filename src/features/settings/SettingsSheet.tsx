@@ -6,6 +6,7 @@ import {
   CircleNotch,
   DownloadSimple,
   Globe,
+  FolderOpen,
   HardDrive,
   Info,
   Keyboard,
@@ -14,6 +15,7 @@ import {
   Plus,
   Sparkle,
   Trash,
+  Tag,
   UploadSimple,
   WarningCircle,
   X,
@@ -29,7 +31,7 @@ import { downloadBackup, importBackupFile } from '../../features/settings/backup
 import { storageService } from '../../services/storage-service';
 import { uploadToImgbed } from '../../services/imgbed';
 import { isServerMode } from '../../services/server-mode';
-import { ServerBookmarksAdmin } from './ServerBookmarksAdmin';
+import { ServerBookmarksAdmin, ServerCategoriesAdmin, ServerTagsAdmin } from './ServerBookmarksAdmin';
 import {
   addBlankDesktop,
   addDesktopFromFolder,
@@ -43,7 +45,6 @@ import {
   useWorkspace,
 } from '../../stores/desktop-store';
 import { patchSettings, useSettings } from '../../stores/settings-store';
-import { PREFERRED_ORDER } from '../../components/single-page/SinglePage';
 import {
   setSettingsOpen,
   useUiState,
@@ -62,6 +63,8 @@ const SECTIONS: Array<{ id: SettingsSection; label: string; icon: typeof Monitor
   ...(isServerMode()
     ? [
         { id: 'server' as const, label: '书签管理（云端）', icon: HardDrive },
+        { id: 'categories' as const, label: '分类管理（云端）', icon: FolderOpen },
+        { id: 'tags' as const, label: '标签管理（云端）', icon: Tag },
         { id: 'imgbed' as const, label: '图床上传', icon: UploadSimple },
       ]
     : []),
@@ -70,7 +73,9 @@ const SECTIONS: Array<{ id: SettingsSection; label: string; icon: typeof Monitor
 const SECTION_COPY: Record<SettingsSection, { title: string; description: string }> = {
   appearance: { title: '外观', description: '壁纸、书签列数、玻璃质感和细微的动效偏好。' },
   desktops: { title: '桌面与书签', description: '管理桌面的名称、顺序与壁纸。' },
-  server: { title: '书签管理（云端）', description: '书签与分类存在 Cloudflare 云端，在这里增删改，桌面会跟着同步。' },
+  server: { title: '书签管理（云端）', description: '书签存在 Cloudflare 云端，在这里增删改，一页与桌面会跟着同步。' },
+  categories: { title: '分类管理（云端）', description: '分类是书签的唯一归属：新建、删除与拖动排序，一页全览的分区顺序跟着这里走。' },
+  tags: { title: '标签管理（云端）', description: '标签是贴在书签上的贴纸：改名或删除会同步到所有带这个标签的书签。' },
   imgbed: { title: '图床上传', description: '把图片上传到你的图床（cfimg），拿到直链后可以直接设为桌面壁纸。' },
   search: { title: '搜索与快捷键', description: '默认搜索引擎与键盘操作。' },
   data: { title: '数据与备份', description: '导出、导入与重置界面数据。' },
@@ -183,6 +188,8 @@ export function SettingsSheet() {
           {section === 'search' ? <SearchSection /> : null}
           {section === 'data' ? <DataSection /> : null}
           {section === 'server' ? <ServerBookmarksAdmin /> : null}
+          {section === 'categories' ? <ServerCategoriesAdmin /> : null}
+          {section === 'tags' ? <ServerTagsAdmin /> : null}
           {section === 'imgbed' ? <ImgbedUploadSection activeDesktop={activeDesktop} /> : null}
         </div>
       </div>

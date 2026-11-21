@@ -4,9 +4,10 @@ import { useStore } from '../../stores/create-store';
 import { LinksEditor, cleanLinks } from '../../components/bookmark-grid/LinksEditor';
 import type { BookmarkLink } from '../../types/bookmark';
 import { DotsSixVertical } from '@phosphor-icons/react';
+import { pushToast } from '../../stores/ui-store';
 
-// 豆豆书签（fork）：云端书签管理——增删改查走 Worker 的 /api（D1），
-// 改完调 reimportBookmarks 让桌面按新书签树重新同步。
+// 豆豆书签（fork）：云端管理三页——书签 / 分类 / 标签，分别走 Worker 的 /api（D1），
+// 改完调 reimportBookmarks 让桌面与一页按新书签树重新同步。
 interface SiteRow {
   id: number;
   name: string;
@@ -61,49 +62,10 @@ async function api(path: string, init?: RequestInit): Promise<Response> {
   return fetch(path, { headers: { 'Content-Type': 'application/json' }, ...init });
 }
 
-export function ServerBookmarksAdmin() {
+function useAdminData() {
   const [data, setData] = useState<AdminData | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [form, setForm] = useState({ name: '', url: '', desc: '', tag: '', catelog: '' });
-  const [formLinks, setFormLinks] = useState<BookmarkLink[]>([]);
-  const [newCategory, setNewCategory] = useState('');
-  const [editing, setEditing] = useState<SiteRow | null>(null);
-  const [confirming, setConfirming] = useState<string | null>(null);
-  const [placingId, setPlacingId] = useState<number | null>(null);
-  const desktops = useStore(workspaceStore, (s) => s.desktops);
-  const [catOrder, setCatOrder] = useState<string[]>([]);
-  const [dragCat, setDragCat] = useState<string | null>(null);
-  const [overCat, setOverCat] = useState<string | null>(null);
-  const [armedCat, setArmedCat] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (data && !dragCat) {
-      setCatOrder([...data.categories].sort((a, b) => a.sort_order - b.sort_order).map((c) => c.catelog));
-    }
-  }, [data, dragCat]);
-
-  async function persistCategoryOrder(names: string[]) {
-    if (!data) return;
-    setBusy(true);
-    try {
-      for (let i = 0; i < names.length; i++) {
-        const cat = data.categories.find((c) => c.catelog === names[i]);
-        const v = (i + 1) * 10;
-        if (cat && cat.sort_order !== v) {
-          const res = await api(`/api/categories/${encodeURIComponent(names[i])}`, { method: 'PUT', body: JSON.stringify({ sort_order: v }) });
-          if (!res.ok) throw new Error('save failed');
-        }
-      }
-      setError('');
-      await refreshAll();
-    } catch {
-      setError('排序保存失败，请重试。');
-      await load();
-    } finally {
-      setBusy(false);
-    }
-  }
 
   const load = useCallback(async () => {
     try {
@@ -141,14 +103,30 @@ export function ServerBookmarksAdmin() {
     }
   }
 
-  if (!data) {
-    return (
-      <div className="sv-wrap">
-        <style>{CSS}</style>
-        {error ? <p className="sv-error">{error}</p> : <p className="sv-note">正在加载云端书签…</p>}
-      </div>
-    );
-  }
+  return { data, error, busy, setBusy, setError, load, refreshAll, mutate };
+}
+
+function LoadingShell({ error }: { error: string }) {
+  return (
+    <div className="sv-wrap">
+      <style>{CSS}</style>
+      {error ? <p className="sv-error">{error}</p> : <p className="sv-note">正在加载云端书签…</p>}
+    </div>
+  );
+}
+
+/* ---------------- 书签页 ---------------- */
+
+export function ServerBookmarksAdmin() {
+  const { data, error, busy, mutate } = useAdminData();
+  const [form, setForm] = useState({ name: '', url: '', desc: '', tag: '', catelog: '' });
+  const [formLinks, setFormLinks] = useState<BookmarkLink[]>([]);
+  const [editing, setEditing] = useState<SiteRow | null>(null);
+  const [confirming, setConfirming] = useState<string | null>(null);
+  const [placingId, setPlacingId] = useState<number | null>(null);
+  const desktops = useStore(workspaceStore, (s) => s.desktops);
+
+  if (!data) return <LoadingShell error={error} />;
 
   const categoryNames = data.categories.map((c) => c.catelog);
   const allCategories = [...new Set([...categoryNames, ...data.sites.map((s) => s.catelog)])];
@@ -156,12 +134,6 @@ export function ServerBookmarksAdmin() {
     cat,
     items: data.sites.filter((s) => s.catelog === cat),
   }));
-  const orderedCats = catOrder
-    .map((name) => data.categories.find((c) => c.catelog === name))
-    .filter((c): c is CategoryRow => Boolean(c));
-  for (const c of data.categories) {
-    if (!catOrder.includes(c.catelog)) orderedCats.push(c);
-  }
 
   return (
     <div className="sv-wrap">
@@ -174,7 +146,7 @@ export function ServerBookmarksAdmin() {
           <input className="sv-input" placeholder="名称" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
           <input className="sv-input" placeholder="https://…" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} />
           <input className="sv-input" placeholder="描述（可空）" value={form.desc} onChange={(e) => setForm({ ...form, desc: e.target.value })} />
-          <input className="sv-input" placeholder="标签（可空，如：博客）" maxLength={20} value={form.tag} onChange={(e) => setForm({ ...form, tag: e.target.value })} />
+          <input className="sv-input" placeholder="标签（可打多个，顿号分隔）" value={form.tag} onChange={(e) => setForm({ ...form, tag: e.target.value })} />
           <select className="sv-select" value={form.catelog} onChange={(e) => setForm({ ...form, catelog: e.target.value })}>
             <option value="">选分类…</option>
             {allCategories.map((c) => (
@@ -200,7 +172,7 @@ export function ServerBookmarksAdmin() {
               }, '添加失败')
             }
           >
-            添加到桌面
+            添加书签
           </button>
         </div>
       </div>
@@ -216,7 +188,7 @@ export function ServerBookmarksAdmin() {
                   <div className="sv-row">
                     <input className="sv-input" style={{ width: 110 }} value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} />
                     <input className="sv-input" style={{ flex: 1 }} value={editing.url} onChange={(e) => setEditing({ ...editing, url: e.target.value })} />
-                    <input className="sv-input" style={{ width: 84 }} placeholder="标签（可空）" maxLength={20} value={editing.tag ?? ''} onChange={(e) => setEditing({ ...editing, tag: e.target.value })} />
+                    <input className="sv-input" style={{ width: 120 }} placeholder="标签（顿号分隔）" value={editing.tag ?? ''} onChange={(e) => setEditing({ ...editing, tag: e.target.value })} />
                     <select className="sv-select" value={editing.catelog} onChange={(e) => setEditing({ ...editing, catelog: e.target.value })}>
                       {allCategories.map((c) => (
                         <option key={c} value={c}>{c}</option>
@@ -283,9 +255,65 @@ export function ServerBookmarksAdmin() {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+/* ---------------- 分类页 ---------------- */
+
+export function ServerCategoriesAdmin() {
+  const { data, error, busy, setBusy, setError, load, refreshAll, mutate } = useAdminData();
+  const [newCategory, setNewCategory] = useState('');
+  const [confirming, setConfirming] = useState<string | null>(null);
+  const [catOrder, setCatOrder] = useState<string[]>([]);
+  const [dragCat, setDragCat] = useState<string | null>(null);
+  const [overCat, setOverCat] = useState<string | null>(null);
+  const [armedCat, setArmedCat] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (data && !dragCat) {
+      setCatOrder([...data.categories].sort((a, b) => a.sort_order - b.sort_order).map((c) => c.catelog));
+    }
+  }, [data, dragCat]);
+
+  async function persistCategoryOrder(names: string[]) {
+    if (!data) return;
+    setBusy(true);
+    try {
+      for (let i = 0; i < names.length; i++) {
+        const cat = data.categories.find((c) => c.catelog === names[i]);
+        const v = (i + 1) * 10;
+        if (cat && cat.sort_order !== v) {
+          const res = await api(`/api/categories/${encodeURIComponent(names[i])}`, { method: 'PUT', body: JSON.stringify({ sort_order: v }) });
+          if (!res.ok) throw new Error('save failed');
+        }
+      }
+      setError('');
+      await refreshAll();
+    } catch {
+      setError('排序保存失败，请重试。');
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!data) return <LoadingShell error={error} />;
+
+  const orderedCats = catOrder
+    .map((name) => data.categories.find((c) => c.catelog === name))
+    .filter((c): c is CategoryRow => Boolean(c));
+  for (const c of data.categories) {
+    if (!catOrder.includes(c.catelog)) orderedCats.push(c);
+  }
+
+  return (
+    <div className="sv-wrap">
+      <style>{CSS}</style>
+      {error ? <p className="sv-error">{error}</p> : null}
 
       <div className="sv-card">
-        <h3>分类</h3>
+        <h3>分类（{orderedCats.length}）</h3>
         {orderedCats.map((c) => {
           const count = data.sites.filter((s) => s.catelog === c.catelog).length;
           return (
@@ -366,7 +394,124 @@ export function ServerBookmarksAdmin() {
           </button>
         </div>
         <p className="sv-note" style={{ marginTop: 8 }}>
-          分类顺序按住行首的拖动手柄上下拖动即可调整（数字框也能直接改）。新分类先在这里建好，再往里加书签。分类改名暂未开放（会牵动桌面映射），需要改名找 COCO 处理。
+          分类顺序按住行首的拖动手柄上下拖动即可调整（数字框也能直接改），一页全览的分区顺序会跟着变。新分类先在这里建好，再往里加书签。分类改名暂未开放（会牵动桌面映射），需要改名找 COCO 处理。
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- 标签页 ---------------- */
+
+const TAG_SPLIT = /[、,，;；]/;
+
+function splitTags(tag: string | null): string[] {
+  if (!tag) return [];
+  return [...new Set(tag.split(TAG_SPLIT).map((s) => s.trim()).filter(Boolean))];
+}
+
+export function ServerTagsAdmin() {
+  const { data, error, busy, setBusy, setError, load, refreshAll } = useAdminData();
+  const [renaming, setRenaming] = useState<{ from: string; value: string } | null>(null);
+  const [confirming, setConfirming] = useState<string | null>(null);
+
+  async function applyToSites(match: (segs: string[]) => string[] | null, failMsg: string) {
+    if (!data) return;
+    setBusy(true);
+    try {
+      for (const site of data.sites) {
+        const next = match(splitTags(site.tag));
+        if (next === null) continue;
+        const res = await api(`/api/bookmarks/${site.id}`, {
+          method: 'PUT',
+          body: JSON.stringify({ ...site, tag: next.join('、'), links: site.links ?? [] }),
+        });
+        if (!res.ok) throw new Error('save failed');
+      }
+      setError('');
+      pushToast('标签已更新。', 'success');
+      await refreshAll();
+    } catch {
+      setError(failMsg);
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!data) return <LoadingShell error={error} />;
+
+  const counts = new Map<string, number>();
+  for (const site of data.sites) {
+    for (const t of splitTags(site.tag)) counts.set(t, (counts.get(t) ?? 0) + 1);
+  }
+  const tags = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+
+  return (
+    <div className="sv-wrap">
+      <style>{CSS}</style>
+      {error ? <p className="sv-error">{error}</p> : null}
+
+      <div className="sv-card">
+        <h3>全部标签（{tags.length}）</h3>
+        {tags.length === 0 ? <p className="sv-note">还没有标签。在书签的编辑里打上标签，这里就会出现。</p> : null}
+        {tags.map(([tag, count]) => (
+          <div className="sv-row" key={tag}>
+            <span className="sv-tag">{tag}</span>
+            <span className="sv-url">{count} 条书签</span>
+            {renaming?.from === tag ? (
+              <>
+                <input
+                  className="sv-input"
+                  style={{ width: 130 }}
+                  value={renaming.value}
+                  autoFocus
+                  onChange={(e) => setRenaming({ from: tag, value: e.target.value })}
+                />
+                <button
+                  className="sv-btn"
+                  disabled={busy}
+                  onClick={() => {
+                    const to = renaming.value.trim().replace(TAG_SPLIT, '');
+                    if (!to || to === tag) { setRenaming(null); return; }
+                    setRenaming(null);
+                    void applyToSites(
+                      (segs) => (segs.includes(tag) ? [...new Set(segs.map((s) => (s === tag ? to : s)))] : null),
+                      '改名失败',
+                    );
+                  }}
+                >
+                  保存
+                </button>
+                <button className="sv-btn ghost" onClick={() => setRenaming(null)}>取消</button>
+              </>
+            ) : confirming === `tag:${tag}` ? (
+              <>
+                <button
+                  className="sv-btn danger"
+                  disabled={busy}
+                  onClick={() => {
+                    setConfirming(null);
+                    void applyToSites(
+                      (segs) => (segs.includes(tag) ? segs.filter((s) => s !== tag) : null),
+                      '删除失败',
+                    );
+                  }}
+                >
+                  确认删除
+                </button>
+                <button className="sv-btn ghost" onClick={() => setConfirming(null)}>取消</button>
+              </>
+            ) : (
+              <>
+                <button className="sv-btn ghost" disabled={busy} onClick={() => setRenaming({ from: tag, value: tag })}>改名</button>
+                <button className="sv-btn danger" disabled={busy} onClick={() => setConfirming(`tag:${tag}`)}>删除</button>
+              </>
+            )}
+          </div>
+        ))}
+        <p className="sv-note" style={{ marginTop: 8 }}>
+          标签是贴在书签上的贴纸：这里改名或删除，会同步到所有带这个标签的书签。改名成一个已有的标签，等于把两个标签合并。
         </p>
       </div>
     </div>
