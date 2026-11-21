@@ -85,7 +85,7 @@ function gatePage(error = '') {
   .avatar { width: 92px; height: 92px; border-radius: 50%; object-fit: cover;
     box-shadow: 0 10px 34px rgb(0 0 0 / 42%), 0 0 0 1px rgb(255 255 255 / 22%); }
   .name { margin-top: 13px; font-size: 21px; font-weight: 600; text-shadow: 0 1px 12px rgb(0 0 0 / 45%); }
-  .field { margin-top: 15px; display: flex; align-items: center; gap: 8px; }
+  .field { margin-top: 15px; position: relative; display: flex; align-items: center; }
   .pill { display: flex; align-items: center; width: 196px; height: 34px; border-radius: 999px; padding: 0 14px;
     background: rgb(255 255 255 / 26%); -webkit-backdrop-filter: blur(18px) saturate(1.6); backdrop-filter: blur(18px) saturate(1.6);
     box-shadow: inset 0 0 0 1px rgb(255 255 255 / 14%); transition: box-shadow 160ms ease, background 160ms ease; }
@@ -93,11 +93,11 @@ function gatePage(error = '') {
   .pill input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; color: #fff;
     font-size: 13.5px; text-align: center; letter-spacing: .02em; }
   .pill input::placeholder { color: rgb(255 255 255 / 78%); }
-  .go { width: 34px; height: 34px; flex: none; border: none; border-radius: 50%; cursor: pointer; color: #fff;
+  .go { position: absolute; left: calc(100% + 8px); top: 50%; width: 34px; height: 34px; flex: none; border: none; border-radius: 50%; cursor: pointer; color: #fff;
     background: rgb(255 255 255 / 30%); -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px);
-    display: flex; align-items: center; justify-content: center; opacity: 0; transform: scale(.8); pointer-events: none;
+    display: flex; align-items: center; justify-content: center; opacity: 0; transform: translateY(-50%) scale(.8); pointer-events: none;
     transition: opacity 160ms ease, transform 160ms ease, background 160ms ease; }
-  .go.on { opacity: 1; transform: scale(1); pointer-events: auto; }
+  .go.on { opacity: 1; transform: translateY(-50%) scale(1); pointer-events: auto; }
   .go:hover { background: rgb(255 255 255 / 44%); }
   .go svg { width: 15px; height: 15px; }
   .hint { margin-top: 13px; font-size: 12.5px; color: rgb(255 255 255 / 88%); text-shadow: 0 1px 8px rgb(0 0 0 / 50%); min-height: 16px; }
