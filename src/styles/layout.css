@@ -2451,7 +2451,10 @@
   padding: 92px 30px 130px;
   max-width: 1360px;
   margin: 0 auto;
-  scrollbar-width: thin;
+  scrollbar-width: none;
+}
+.single-page::-webkit-scrollbar {
+  display: none;
 }
 .single-page__head {
   display: flex;
@@ -2660,11 +2663,6 @@
 }
 
 /* 一页：细滚动条（macOS 风，不抢眼） */
-.single-page { scrollbar-width: thin; scrollbar-color: rgb(255 255 255 / 30%) transparent; }
-.single-page::-webkit-scrollbar { width: 6px; }
-.single-page::-webkit-scrollbar-track { background: transparent; }
-.single-page::-webkit-scrollbar-thumb { background: rgb(255 255 255 / 26%); border-radius: 3px; }
-.single-page::-webkit-scrollbar-thumb:hover { background: rgb(255 255 255 / 42%); }
 
 /* 一页：滚动时卡片关毛玻璃与过渡，根治滚动阴影闪烁（46 张卡各自 backdrop blur 重绘 + hover 抖动） */
 .single-page .bookmark-card {

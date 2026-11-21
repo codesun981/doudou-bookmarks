@@ -105,15 +105,20 @@ export function DynamicIsland() {
 
   const engine = getSearchEngine(settings.searchEngine);
   const trimmedQuery = query.trim();
+  const splitTags = (raw?: string): string[] =>
+    (raw ?? '')
+      .split(/[、,，;；]/)
+      .map((t) => t.trim())
+      .filter(Boolean);
   const tagFacets = useMemo(() => {
     const map = new Map<string, number>();
-    for (const m of bookmarks) if (m.tag) map.set(m.tag, (map.get(m.tag) ?? 0) + 1);
-    return [...map.entries()].sort((a, b) => b[1] - a[1]);
+    for (const m of bookmarks) for (const t of splitTags(m.tag)) map.set(t, (map.get(t) ?? 0) + 1);
+    return [...map.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'zh-CN'));
   }, [bookmarks]);
   const tagBookmarks = useMemo(() => {
     if (!tagSel) return [];
     return bookmarks
-      .filter((m) => m.tag === tagSel)
+      .filter((m) => splitTags(m.tag).includes(tagSel))
       .sort((a, b) => a.title.localeCompare(b.title, 'zh-CN'));
   }, [tagSel, bookmarks]);
   const bookmarkHits = useMemo(
@@ -121,7 +126,7 @@ export function DynamicIsland() {
       trimmedQuery
         ? searchBookmarks(
             trimmedQuery,
-            tagSel ? bookmarks.filter((m) => m.tag === tagSel) : bookmarks,
+            tagSel ? bookmarks.filter((m) => splitTags(m.tag).includes(tagSel)) : bookmarks,
             7,
           )
         : [],
