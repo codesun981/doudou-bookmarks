@@ -8,6 +8,7 @@ interface SiteRow {
   name: string;
   url: string;
   desc: string | null;
+  tag: string | null;
   catelog: string;
   sort_order: number;
 }
@@ -38,6 +39,7 @@ const CSS = `
 .sv-note { color: rgb(235 240 250 / 50%); font-size: 12px; line-height: 1.55; }
 .sv-error { color: #ff9f0a; font-size: 12.5px; }
 .sv-cat { font-size: 12px; font-weight: 700; letter-spacing: .02em; color: rgb(235 240 250 / 75%); margin: 12px 0 2px; }
+.sv-tag { font-size: 11px; font-weight: 600; color: #ffd60a; background: rgb(255 214 10 / 13%); border: 1px solid rgb(255 214 10 / 25%); padding: 1px 7px; border-radius: 999px; white-space: nowrap; }
 `;
 
 async function api(path: string, init?: RequestInit): Promise<Response> {
@@ -48,7 +50,7 @@ export function ServerBookmarksAdmin() {
   const [data, setData] = useState<AdminData | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [form, setForm] = useState({ name: '', url: '', desc: '', catelog: '' });
+  const [form, setForm] = useState({ name: '', url: '', desc: '', tag: '', catelog: '' });
   const [newCategory, setNewCategory] = useState('');
   const [editing, setEditing] = useState<SiteRow | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
@@ -116,6 +118,7 @@ export function ServerBookmarksAdmin() {
           <input className="sv-input" placeholder="名称" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
           <input className="sv-input" placeholder="https://…" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} />
           <input className="sv-input" placeholder="描述（可空）" value={form.desc} onChange={(e) => setForm({ ...form, desc: e.target.value })} />
+          <input className="sv-input" placeholder="标签（可空，如：博客）" maxLength={20} value={form.tag} onChange={(e) => setForm({ ...form, tag: e.target.value })} />
           <select className="sv-select" value={form.catelog} onChange={(e) => setForm({ ...form, catelog: e.target.value })}>
             <option value="">选分类…</option>
             {allCategories.map((c) => (
@@ -130,7 +133,7 @@ export function ServerBookmarksAdmin() {
             onClick={() =>
               void mutate(async () => {
                 const res = await api('/api/bookmarks', { method: 'POST', body: JSON.stringify(form) });
-                if (res.ok) setForm({ name: '', url: '', desc: '', catelog: form.catelog });
+                if (res.ok) setForm({ name: '', url: '', desc: '', tag: '', catelog: form.catelog });
                 return res;
               }, '添加失败')
             }
@@ -150,6 +153,7 @@ export function ServerBookmarksAdmin() {
                 <div className="sv-row" key={site.id}>
                   <input className="sv-input" style={{ width: 110 }} value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} />
                   <input className="sv-input" style={{ flex: 1 }} value={editing.url} onChange={(e) => setEditing({ ...editing, url: e.target.value })} />
+                  <input className="sv-input" style={{ width: 84 }} placeholder="标签（可空）" maxLength={20} value={editing.tag ?? ''} onChange={(e) => setEditing({ ...editing, tag: e.target.value })} />
                   <select className="sv-select" value={editing.catelog} onChange={(e) => setEditing({ ...editing, catelog: e.target.value })}>
                     {allCategories.map((c) => (
                       <option key={c} value={c}>{c}</option>
@@ -165,6 +169,7 @@ export function ServerBookmarksAdmin() {
               ) : (
                 <div className="sv-row" key={site.id}>
                   <span className="sv-name">{site.name}</span>
+                  {site.tag ? <span className="sv-tag">{site.tag}</span> : null}
                   <span className="sv-url">{site.url}</span>
                   <button className="sv-btn ghost" onClick={() => setEditing(site)}>编辑</button>
                   {confirming === `bm:${site.id}` ? (
