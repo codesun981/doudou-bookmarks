@@ -36,6 +36,7 @@ import { patchSettings, useSettings } from '../../stores/settings-store';
 import { setSettingsOpen, pushToast } from '../../stores/ui-store';
 import { categoryOf, reorderIds } from '../../features/bookmarks/tree';
 import { openUrl } from '../../services/browser-api';
+import { probeAndClearBookmark } from '../../services/health';
 import { prettyUrl } from '../../utils/url';
 import { BookmarkTile } from './BookmarkTile';
 import { FolderTile } from './FolderTile';
@@ -557,6 +558,7 @@ function BookmarkContextMenu({
         disabled={view.missing}
         onClick={() => {
           onClose();
+          probeAndClearBookmark(view.id, view.url);
           openUrl(view.url);
         }}
       >
@@ -570,6 +572,7 @@ function BookmarkContextMenu({
         disabled={view.missing}
         onClick={() => {
           onClose();
+          probeAndClearBookmark(view.id, view.url);
           openUrl(view.url, true);
         }}
       >
@@ -588,6 +591,7 @@ function BookmarkContextMenu({
               role="menuitem"
               onClick={() => {
                 onClose();
+                probeAndClearBookmark(view.id, link.url);
                 openUrl(link.url, true);
               }}
             >
@@ -725,6 +729,7 @@ export function LinkChooserModal({ view, onClose }: { view: BookmarkView; onClos
               type="button"
               className="link-chooser__open"
               onClick={() => {
+                probeAndClearBookmark(view.id, entry.url);
                 openUrl(entry.url, true);
                 onClose();
               }}

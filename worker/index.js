@@ -434,6 +434,19 @@ async function handleApi(request, env, path) {
     }));
     return json({ ok: true, results: out });
   }
+  if (path === '/api/healthcheck/verify' && request.method === 'POST') {
+    // 点击自愈：用户浏览器亲自探活成功后回报，清掉受限/失效标记（fail_streak 归零）。
+    await ensureTables(env);
+    const b = await readJsonBody(request);
+    const id = Number(b.id);
+    if (!Number.isFinite(id)) return json({ error: 'id 必填' }, 400);
+    const site = await env.DB.prepare('SELECT id FROM sites WHERE id = ?').bind(id).first();
+    if (!site) return json({ error: 'not found' }, 404);
+    const now = Date.now();
+    await env.DB.prepare("INSERT INTO health_checks (site_id, status, detail, checked_at, fail_streak) VALUES (?, 'alive', '用户浏览器验证可达', ?, 0) ON CONFLICT(site_id) DO UPDATE SET status = excluded.status, detail = excluded.detail, checked_at = excluded.checked_at, fail_streak = 0")
+      .bind(id, now).run();
+    return json({ ok: true });
+  }
   if (path === '/api/healthcheck/run-daily' && request.method === 'POST') {
     // 与 cron 定时任务共用同一份轮测逻辑（每天测最久未测的约 20 个，约半月轮完一圈）。
     const checked = await runDailyHealthSlice(env);
