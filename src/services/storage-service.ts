@@ -173,6 +173,10 @@ function createServerBackend(): Backend {
           adopt(remote);
           pushToast('云端已有更新（可能来自另一台设备或另一个标签页），刚才这次改动未保存，已同步为云端版本', 'error');
         }
+      } else {
+        // 其他拒绝（400 存储防护 / 413 过大 / 401 门过期等）此前会静默丢弃保存，
+        // 用户改了半天都不知道没存上——一律出声（2026-11-22 审计 D 项实测发现）。
+        pushToast('这次改动没有保存成功（服务器拒绝了写入），请刷新页面后重试', 'error');
       }
     } catch { /* 网络失败保持 dirty，下次 set 或 pagehide 再试 */ }
   }
