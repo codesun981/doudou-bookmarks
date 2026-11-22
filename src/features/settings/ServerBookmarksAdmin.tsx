@@ -132,8 +132,220 @@ function LoadingShell({ error }: { error: string }) {
 
 /* ---------------- 书签页 ---------------- */
 
+// ---- 站点体检（2026-11-22）：CF 侧探活；护栏 = 内网跳过、自家站不可删、连续两次失败才可删、删前自动导出 ----
+interface HealthRow {
+  status: string;
+  detail?: string;
+  checked_at?: number;
+  fail_streak?: number;
+}
+
+function HealthCheckCard({ sites, onChanged }: { sites: SiteRow[]; onChanged: () => void }) {
+  const [results, setResults] = useState<Map<number, HealthRow>>(new Map());
+  const [protectedIds, setProtectedIds] = useState<Set<number>>(new Set());
+  const [running, setRunning] = useState(false);
+  const [progress, setProgress] = useState({ done: 0, total: 0 });
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [confirming, setConfirming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const loadResults = useCallback(async () => {
+    try {
+      const res = await api('/api/healthcheck');
+      if (!res.ok) return;
+      const body = (await res.json()) as {
+        results: Array<{ site_id: number; status: string; detail?: string; checked_at?: number; fail_streak?: number }>;
+        protectedIds: number[];
+      };
+      setResults(new Map(body.results.map((r) => [r.site_id, r])));
+      setProtectedIds(new Set(body.protectedIds || []));
+    } catch { /* 体检结果读不到不阻塞页面 */ }
+  }, []);
+
+  useEffect(() => {
+    void loadResults();
+  }, [loadResults]);
+
+  async function startCheck() {
+    if (running || sites.length === 0) return;
+    setRunning(true);
+    setSelected(new Set());
+    const ids = sites.map((s) => s.id);
+    setProgress({ done: 0, total: ids.length });
+    const merged = new Map(results);
+    let done = 0;
+    try {
+      for (let i = 0; i < ids.length; i += 20) {
+        const chunk = ids.slice(i, i + 20);
+        const res = await api('/api/healthcheck', { method: 'POST', body: JSON.stringify({ ids: chunk }) });
+        if (res.ok) {
+          const body = (await res.json()) as {
+            results: Array<{ id: number; status: string; detail?: string; checked_at?: number; fail_streak?: number; protected?: boolean }>;
+          };
+          for (const r of body.results) {
+            merged.set(r.id, r);
+            if (r.protected) setProtectedIds((prev) => new Set(prev).add(r.id));
+          }
+          setResults(new Map(merged));
+        }
+        done += chunk.length;
+        setProgress({ done, total: ids.length });
+      }
+      const counts = { alive: 0, restricted: 0, dead: 0, skipped: 0 };
+      for (const s of sites) {
+        const r = merged.get(s.id);
+        if (r && r.status in counts) counts[r.status as keyof typeof counts]++;
+      }
+      pushToast(`体检完成：存活 ${counts.alive} · 受限 ${counts.restricted} · 疑似失效 ${counts.dead} · 跳过 ${counts.skipped}`, 'success');
+    } catch {
+      pushToast('体检中断，请重试', 'error');
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  const deadList = sites
+    .filter((s) => results.get(s.id)?.status === 'dead')
+    .sort((a, b) => (results.get(b.id)?.fail_streak ?? 0) - (results.get(a.id)?.fail_streak ?? 0));
+  const counts = { alive: 0, restricted: 0, dead: 0, skipped: 0 };
+  let lastChecked = 0;
+  for (const s of sites) {
+    const r = results.get(s.id);
+    if (r) {
+      if (r.status in counts) counts[r.status as keyof typeof counts]++;
+      if ((r.checked_at ?? 0) > lastChecked) lastChecked = r.checked_at ?? 0;
+    }
+  }
+  const eligible = (s: SiteRow) => (results.get(s.id)?.fail_streak ?? 0) >= 2 && !protectedIds.has(s.id);
+  const selectedSites = deadList.filter((s) => selected.has(s.id) && eligible(s));
+
+  function toggle(id: number) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function exportSites(list: SiteRow[]) {
+    const blob = new Blob([JSON.stringify(list, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `bookmarks-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  async function doDelete() {
+    setDeleting(true);
+    try {
+      const res = await api('/api/bookmarks/batch-delete', {
+        method: 'POST',
+        body: JSON.stringify({ ids: selectedSites.map((s) => s.id) }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { deleted?: number };
+      if (!res.ok) throw new Error('delete failed');
+      pushToast(`已删除 ${body.deleted ?? selectedSites.length} 条书签`, 'success');
+      setSelected(new Set());
+      setConfirming(false);
+      onChanged();
+      await loadResults();
+    } catch {
+      pushToast('删除失败，请重试', 'error');
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  return (
+    <div className="sv-card">
+      <h3>站点体检</h3>
+      <p className="sv-note" style={{ marginBottom: 10 }}>
+        从 Cloudflare 侧逐个探活：2xx/3xx 算存活，401/403/429 算「受限但活着」，连不上/超时/5xx 才算疑似失效。
+        内网与 tailnet 地址会跳过；体检在机房网络跑，需登录或校园网才通的站可能误判，所以
+        <b>连续两次体检都失败</b>的才允许删，「我的站点」里的自家站永远不可删。删之前会自动下载一份备份 JSON。
+      </p>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <button type="button" className="sv-btn" disabled={running} onClick={() => void startCheck()}>
+          {running ? `体检中… ${progress.done}/${progress.total}` : '开始体检'}
+        </button>
+        {results.size > 0 && !running ? (
+          <span className="sv-note">
+            存活 {counts.alive} · 受限 {counts.restricted} · 疑似失效 {counts.dead} · 跳过 {counts.skipped}
+            {lastChecked ? ` · 上次 ${new Date(lastChecked).toLocaleString('zh-CN', { hour12: false })}` : ''}
+          </span>
+        ) : null}
+      </div>
+      {deadList.length > 0 ? (
+        <div style={{ marginTop: 8 }}>
+          {deadList.map((s) => {
+            const r = results.get(s.id);
+            const ok = eligible(s);
+            return (
+              <div className="sv-row" key={s.id}>
+                <input type="checkbox" disabled={!ok} checked={selected.has(s.id) && ok} onChange={() => toggle(s.id)} />
+                <span className="sv-name">{s.name}</span>
+                <span className="sv-url">{s.url}</span>
+                <span className="sv-tag" style={{ color: '#ff9f0a', background: 'rgb(255 159 10 / 12%)', borderColor: 'rgb(255 159 10 / 30%)' }}>
+                  {r?.detail || '疑似失效'}
+                </span>
+                <span className="sv-note" style={{ whiteSpace: 'nowrap' }}>
+                  {protectedIds.has(s.id)
+                    ? '自家站 · 不可删'
+                    : (r?.fail_streak ?? 0) >= 2
+                      ? `连续失败 ${r?.fail_streak} 次 · 可删`
+                      : `失败 ${r?.fail_streak ?? 0} 次 · 再失败一次才可删`}
+                </span>
+                <span className="sv-note" style={{ whiteSpace: 'nowrap' }}>{s.catelog}</span>
+              </div>
+            );
+          })}
+          <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="sv-btn ghost"
+              onClick={() => setSelected(new Set(deadList.filter(eligible).map((s) => s.id)))}
+            >
+              全选可删的（{deadList.filter(eligible).length}）
+            </button>
+            <button
+              type="button"
+              className="sv-btn ghost"
+              disabled={selectedSites.length === 0}
+              onClick={() => exportSites(selectedSites)}
+            >
+              导出选中备份
+            </button>
+            <button
+              type="button"
+              className="sv-btn danger"
+              disabled={selectedSites.length === 0}
+              onClick={() => {
+                exportSites(selectedSites);
+                setConfirming(true);
+              }}
+            >
+              删除选中（{selectedSites.length}）
+            </button>
+          </div>
+        </div>
+      ) : null}
+      <ConfirmDialog
+        open={confirming}
+        title="批量删除书签"
+        body={`确定删除这 ${selectedSites.length} 条疑似失效的书签吗？备份 JSON 已下载到你的电脑，删错了可以找我恢复。名单：${selectedSites.slice(0, 5).map((s) => s.name).join('、')}${selectedSites.length > 5 ? ` 等 ${selectedSites.length} 条` : ''}`}
+        confirmLabel={deleting ? '删除中…' : '确认删除'}
+        danger
+        onConfirm={() => void doDelete()}
+        onCancel={() => setConfirming(false)}
+      />
+    </div>
+  );
+}
+
 export function ServerBookmarksAdmin() {
-  const { data, error, busy, mutate } = useAdminData();
+  const { data, error, busy, mutate, refreshAll } = useAdminData();
   const [form, setForm] = useState({ name: '', url: '', desc: '', tag: '', catelog: '' });
   const [formLinks, setFormLinks] = useState<BookmarkLink[]>([]);
   const [editing, setEditing] = useState<SiteRow | null>(null);
@@ -155,6 +367,8 @@ export function ServerBookmarksAdmin() {
     <div className="sv-wrap">
       <style>{CSS}</style>
       {error ? <p className="sv-error">{error}</p> : null}
+
+      <HealthCheckCard sites={data.sites} onChanged={() => void refreshAll()} />
 
       <div className="sv-card">
         <h3>添加书签</h3>

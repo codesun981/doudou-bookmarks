@@ -413,6 +413,51 @@ async function handleApi(request, env, path) {
     await env.DB.prepare('DELETE FROM category_orders WHERE catelog = ?').bind(name).run();
     return json({ ok: true });
   }
+  // ---- 站点体检（2026-11-22）：CF 侧探活，结果存 health_checks；内网/自家站有护栏 ----
+  if (path === '/api/healthcheck' && request.method === 'GET') {
+    await ensureTables(env);
+    const rows = (await env.DB.prepare('SELECT site_id, status, detail, checked_at, fail_streak FROM health_checks').all()).results || [];
+    const prot = (await env.DB.prepare('SELECT s.id FROM sites s JOIN category_orders c ON c.catelog = s.catelog WHERE c.in_single = 1').all()).results || [];
+    return json({ ok: true, results: rows, protectedIds: prot.map((r) => r.id) });
+  }
+  if (path === '/api/healthcheck' && request.method === 'POST') {
+    await ensureTables(env);
+    const b = await readJsonBody(request);
+    const ids = (Array.isArray(b.ids) ? b.ids : []).map(Number).filter(Number.isFinite).slice(0, 20);
+    if (ids.length === 0) return json({ error: 'ids 必填' }, 400);
+    const singleRows = (await env.DB.prepare('SELECT catelog FROM category_orders WHERE in_single = 1').all()).results || [];
+    const singleCats = new Set(singleRows.map((r) => r.catelog));
+    const out = [];
+    await Promise.all(ids.map(async (id) => {
+      const site = await env.DB.prepare('SELECT id, url, catelog FROM sites WHERE id = ?').bind(id).first();
+      if (!site) { out.push({ id, status: 'skipped', detail: '书签不存在' }); return; }
+      const prot = singleCats.has(site.catelog);
+      const skip = hcSkipReason(site);
+      if (skip) { out.push({ id, status: 'skipped', detail: skip, protected: prot }); return; }
+      const r = await hcProbe(site.url);
+      const prev = await env.DB.prepare('SELECT fail_streak FROM health_checks WHERE site_id = ?').bind(id).first();
+      const streak = r.status === 'dead' ? (prev?.fail_streak || 0) + 1 : 0;
+      const now = Date.now();
+      await env.DB.prepare('INSERT INTO health_checks (site_id, status, detail, checked_at, fail_streak) VALUES (?, ?, ?, ?, ?) ON CONFLICT(site_id) DO UPDATE SET status = excluded.status, detail = excluded.detail, checked_at = excluded.checked_at, fail_streak = excluded.fail_streak')
+        .bind(id, r.status, r.detail, now, streak).run();
+      out.push({ id, status: r.status, detail: r.detail, checked_at: now, fail_streak: streak, protected: prot });
+    }));
+    return json({ ok: true, results: out });
+  }
+  if (path === '/api/bookmarks/batch-delete' && request.method === 'POST') {
+    await ensureTables(env);
+    const b = await readJsonBody(request);
+    const ids = (Array.isArray(b.ids) ? b.ids : []).map(Number).filter(Number.isFinite).slice(0, 500);
+    let deleted = 0;
+    for (const id of ids) {
+      const r = await env.DB.prepare('DELETE FROM sites WHERE id = ?').bind(id).run();
+      if (r.meta.changes) {
+        deleted++;
+        await env.DB.prepare('DELETE FROM health_checks WHERE site_id = ?').bind(id).run();
+      }
+    }
+    return json({ ok: true, deleted });
+  }
   // ---- 订阅到期（方案 A，2026-11-22）：与旧 sub 站共享同一 KV，只读写 'subscriptions' 键 ----
   if (path === '/api/subs' && request.method === 'GET') {
     return json({ ok: true, subscriptions: await readSubs(env) });
@@ -449,6 +494,52 @@ async function handleApi(request, env, path) {
     return json({ ok: true });
   }
   return null;
+}
+
+// ---- 站点体检探针 ----
+// 体检在 CF 网络侧进行：内网/tailnet/本地地址根本够不着，查了必误判，直接跳过。
+function hcSkipReason(site) {
+  if (site.catelog === '内网服务') return '内网分类，跳过';
+  let u;
+  try { u = new URL(site.url); } catch { return '网址无效，跳过'; }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return '非 http(s)，跳过';
+  const h = u.hostname.toLowerCase();
+  if (h === 'localhost' || h.endsWith('.local')) return '本地地址，跳过';
+  if (/^(10\.|127\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)/.test(h)) return '内网地址，跳过';
+  return null;
+}
+const HC_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36';
+async function hcFetchOnce(url, method) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 6000);
+  try {
+    const res = await fetch(url, {
+      method,
+      redirect: 'follow',
+      signal: ctrl.signal,
+      headers: { 'User-Agent': HC_UA, Accept: 'text/html,application/xhtml+xml,*/*' },
+    });
+    try { await res.body?.cancel(); } catch { /* 只看状态行 */ }
+    return res.status;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+// 分类口径：2xx/3xx 存活；401/403/429 受限（有响应=活着）；其余与网络错误 = 疑似失效。
+async function hcProbe(url) {
+  let code = null;
+  let err = '';
+  try {
+    code = await hcFetchOnce(url, 'HEAD');
+    if (code === 405 || code === 501) code = await hcFetchOnce(url, 'GET');
+  } catch (e1) {
+    err = e1 && e1.name === 'AbortError' ? '超时' : '连不上';
+    try { code = await hcFetchOnce(url, 'GET'); err = ''; } catch { /* 保持 err */ }
+  }
+  if (code == null) return { status: 'dead', detail: err || '连不上' };
+  if (code >= 200 && code < 400) return { status: 'alive', detail: `HTTP ${code}` };
+  if (code === 401 || code === 403 || code === 429) return { status: 'restricted', detail: `HTTP ${code}（站点活着，只是拦了机房访问）` };
+  return { status: 'dead', detail: `HTTP ${code}` };
 }
 
 // ---- 订阅数据（旧 sub 站 KV 的 'subscriptions' 键；'config' 含密码/token，绝不读取） ----
@@ -492,6 +583,7 @@ async function ensureTables(env) {
   if (_tablesReady) return;
   await env.DB.prepare('CREATE TABLE IF NOT EXISTS ui_state (id INTEGER PRIMARY KEY, blob TEXT NOT NULL, version INTEGER NOT NULL, updated_at INTEGER NOT NULL)').run();
   await env.DB.prepare('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)').run();
+  await env.DB.prepare('CREATE TABLE IF NOT EXISTS health_checks (site_id INTEGER PRIMARY KEY, status TEXT NOT NULL, detail TEXT, checked_at INTEGER NOT NULL, fail_streak INTEGER NOT NULL DEFAULT 0)').run();
   _tablesReady = true;
 }
 async function getMetaInt(env, key) {
