@@ -5,7 +5,29 @@ import type { BookmarkView } from '../../stores/desktop-store';
 import { useFavicon } from '../../hooks/use-favicon';
 import { useSettings } from '../../stores/settings-store';
 import { openUrl } from '../../services/browser-api';
+import { probeAndClearBookmark, useHealthRow } from '../../services/health';
 import { prettyUrl, siteHue, siteLetter } from '../../utils/url';
+
+/** 站点状态点：只标问题——受限琥珀、疑似失效红；存活/未检测不标，保持卡片干净。 */
+function HealthDot({ view, inline = false }: { view: BookmarkView; inline?: boolean }) {
+  const row = useHealthRow(view.id);
+  if (view.missing || !row) return null;
+  if (row.status !== 'dead' && row.status !== 'restricted') return null;
+  const when = row.checked_at
+    ? new Date(row.checked_at).toLocaleString('zh-CN', { hour12: false })
+    : '';
+  const title =
+    row.status === 'dead'
+      ? `疑似失效（${row.detail || '连不上'}）· 检测于 ${when} · 详情见设置 → 站点状态`
+      : `受限：站点活着，只是拦了机房检测（${row.detail || ''}）· 检测于 ${when}`;
+  return (
+    <span
+      className={`bookmark-health bookmark-health--${row.status}${inline ? ' bookmark-health--inline' : ''}`}
+      title={title}
+      aria-label={title}
+    />
+  );
+}
 
 interface BookmarkTileProps {
   view: BookmarkView;
@@ -115,6 +137,7 @@ export function BookmarkTile({
             {multi ? `+${view.links!.length}` : '↗'}
           </span>
         ) : null}
+        <HealthDot view={view} />
       </span>
       <span className="bookmark-label">{view.title}</span>
       {pinned ? <span className="bookmark-pin" aria-hidden="true" /> : null}
@@ -157,6 +180,7 @@ export function BookmarkTile({
       <span className="bookmark-card__body">
         <span className="bookmark-card__title">
           <span className="bookmark-card__name">{view.title}</span>
+          <HealthDot view={view} inline />
           {pinned ? <span className="bookmark-card__pin" aria-label="已钉在 Dock" /> : null}
           {view.tag
             ? view.tag
@@ -210,8 +234,10 @@ export function BookmarkTile({
           onClick={(event) => {
             event.preventDefault();
             event.stopPropagation();
-            if (chooseMode) openUrl(view.url, true);
-            else onChooseLinks?.(view);
+            if (chooseMode) {
+              probeAndClearBookmark(view.id, view.url);
+              openUrl(view.url, true);
+            } else onChooseLinks?.(view);
           }}
         >
           {chooseMode ? <ArrowSquareOut size={14} /> : <List size={14} />}
@@ -259,7 +285,10 @@ export function BookmarkTile({
         if (multi && chooseMode && onChooseLinks) {
           event.preventDefault();
           onChooseLinks(view);
+          return;
         }
+        // 点击自愈：带标记的书签被点开时，用用户浏览器顺手探活（与打开并行，不延迟）
+        probeAndClearBookmark(view.id, view.url);
       }}
     >
       {variant === 'card' ? cardContent : content}

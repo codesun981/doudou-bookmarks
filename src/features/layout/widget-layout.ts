@@ -13,6 +13,7 @@ const DEFAULT_SIZES: Record<WidgetType, { width: number; height: number }> = {
   pomodoro: { width: 300, height: 252 },
   search: { width: 300, height: 132 },
   imgbed: { width: 300, height: 252 },
+  subs: { width: 300, height: 252 },
 };
 
 export interface ViewportSize {
@@ -93,6 +94,9 @@ export function createWidget(
   if (type === 'imgbed') {
     return { ...baseWidget(type, desktopId, x, y, zIndex), type: 'imgbed', settings: {} };
   }
+  if (type === 'subs') {
+    return { ...baseWidget(type, desktopId, x, y, zIndex), type: 'subs', settings: {} };
+  }
   return { ...baseWidget(type, desktopId, x, y, zIndex), type: 'search', settings: {} };
 }
 
@@ -156,5 +160,7 @@ export function widgetLabel(type: WidgetType): string {
       return '快速搜索';
     case 'imgbed':
       return '图床上传';
+    case 'subs':
+      return '订阅到期';
   }
 }

@@ -1032,6 +1032,13 @@
   border-radius: 22px;
 }
 
+/* 中等宽度的工作弹窗（列表/表单）：基础 .modal 无内边距，必须用这个变体 */
+.modal--sheet {
+  width: min(620px, calc(100vw - 48px));
+  padding: 24px 26px;
+  border-radius: 22px;
+}
+
 .modal__title {
   color: var(--ink);
   font-size: 15px;

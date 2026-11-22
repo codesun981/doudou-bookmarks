@@ -218,7 +218,7 @@ export function DynamicIsland() {
     }
     if (event.key === 'Enter') {
       event.preventDefault();
-      executeRow(rows[selected], event.metaKey || event.ctrlKey);
+      executeRow(rows[selected], true);
       return;
     }
     if (event.key === 'Escape') {
@@ -377,7 +377,7 @@ export function DynamicIsland() {
                         className="island-row"
                         data-active={selected === position}
                         onMouseEnter={() => setSelected(position)}
-                        onClick={() => executeRow(row, false)}
+                        onClick={() => executeRow(row, true)}
                       >
                         <IslandSiteIcon url={row.meta.url} title={row.meta.title} />
                         <span className="island-row__text">
@@ -406,14 +406,14 @@ export function DynamicIsland() {
                       className="island-row"
                       data-active={selected === position}
                       onMouseEnter={() => setSelected(position)}
-                      onClick={() => executeRow(row, false)}
+                      onClick={() => executeRow(row, true)}
                     >
                       <span className="island-row__icon">
                         <ArrowRight size={15} />
                       </span>
                       <span className="island-row__text">
                         <span className="island-row__title">{queryPreview}</span>
-                        <span className="island-row__meta">在同一个标签页打开</span>
+                        <span className="island-row__meta">在新标签页打开</span>
                       </span>
                       <span className="island-row__side">
                         {selected === position ? <span className="kbd">↵</span> : null}
@@ -477,8 +477,8 @@ export function DynamicIsland() {
               {desktops.length > 0 ? (
                 <>
                   <div className="island-label">切换桌面</div>
-                  <div className="island-results">
-                    {desktops.slice(0, 4).map((desktop) => (
+                  <div className="island-results island-results--desktops">
+                    {desktops.map((desktop) => (
                       <button
                         key={desktop.id}
                         type="button"

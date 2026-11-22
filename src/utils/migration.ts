@@ -65,7 +65,7 @@ export type ParseSnapshotResult =
 
 type RecordValue = Record<string, unknown>;
 
-const WIDGET_TYPES: WidgetType[] = ['clock', 'note', 'countdown', 'pomodoro', 'search', 'imgbed'];
+const WIDGET_TYPES: WidgetType[] = ['clock', 'note', 'countdown', 'pomodoro', 'search', 'imgbed', 'subs'];
 const MAX_DESKTOPS = 60;
 const MAX_WIDGETS = 240;
 const MAX_NOTES = 100;
@@ -269,6 +269,8 @@ function sanitizeWidgets(rawWidgets: unknown, desktopIds: Set<string>, issues: s
       widgets.push({ ...base, type: 'pomodoro', settings: {} });
     } else if (type === 'imgbed') {
       widgets.push({ ...base, type: 'imgbed', settings: {} });
+    } else if (type === 'subs') {
+      widgets.push({ ...base, type: 'subs', settings: {} });
     } else {
       widgets.push({ ...base, type: 'search', settings: {} });
     }

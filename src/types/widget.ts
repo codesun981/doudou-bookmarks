@@ -1,4 +1,4 @@
-export type WidgetType = 'clock' | 'note' | 'countdown' | 'pomodoro' | 'search' | 'imgbed';
+export type WidgetType = 'clock' | 'note' | 'countdown' | 'pomodoro' | 'search' | 'imgbed' | 'subs';
 
 interface WidgetInstanceBase {
   id: string;
@@ -26,6 +26,7 @@ export interface CountdownWidgetSettings {
 export type PomodoroWidgetSettings = Record<string, never>;
 export type SearchWidgetSettings = Record<string, never>;
 export type ImgbedWidgetSettings = Record<string, never>;
+export type SubsWidgetSettings = Record<string, never>;
 
 export type WidgetInstance =
   | (WidgetInstanceBase & { type: 'clock'; settings: ClockWidgetSettings })
@@ -33,7 +34,8 @@ export type WidgetInstance =
   | (WidgetInstanceBase & { type: 'countdown'; settings: CountdownWidgetSettings })
   | (WidgetInstanceBase & { type: 'pomodoro'; settings: PomodoroWidgetSettings })
   | (WidgetInstanceBase & { type: 'search'; settings: SearchWidgetSettings })
-  | (WidgetInstanceBase & { type: 'imgbed'; settings: ImgbedWidgetSettings });
+  | (WidgetInstanceBase & { type: 'imgbed'; settings: ImgbedWidgetSettings })
+  | (WidgetInstanceBase & { type: 'subs'; settings: SubsWidgetSettings });
 
 export type NoteColor = 'paper' | 'apricot' | 'mint' | 'lilac';
 

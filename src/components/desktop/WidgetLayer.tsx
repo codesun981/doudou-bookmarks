@@ -5,6 +5,7 @@ import { NotesWidget } from '../widgets/notes/NotesWidget';
 import { PomodoroWidget } from '../widgets/pomodoro/PomodoroWidget';
 import { SearchWidget } from '../widgets/search/SearchWidget';
 import { ImgbedWidget } from '../widgets/imgbed/ImgbedWidget';
+import { SubsWidget } from '../widgets/subs/SubsWidget';
 
 interface WidgetLayerProps {
   compact: boolean;
@@ -76,6 +77,16 @@ export function WidgetLayer({ compact, canvasWidth, canvasHeight }: WidgetLayerP
           case 'imgbed':
             return (
               <ImgbedWidget
+                key={widget.id}
+                widget={widget}
+                compact={compact}
+                canvasWidth={canvasWidth}
+                canvasHeight={canvasHeight}
+              />
+            );
+          case 'subs':
+            return (
+              <SubsWidget
                 key={widget.id}
                 widget={widget}
                 compact={compact}

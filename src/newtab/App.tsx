@@ -1,5 +1,7 @@
 import { useEffect } from 'react';
 import { bootstrapWorkspace } from '../features/desktops/bootstrap';
+import { isServerMode } from '../services/server-mode';
+import { loadHealthResults } from '../services/health';
 import { getWallpaper, wallpaperImageUrl } from '../features/layout/wallpapers';
 import { useStore } from '../stores/create-store';
 import {
@@ -35,6 +37,11 @@ export function App() {
 
   useEffect(() => {
     void bootstrapWorkspace();
+  }, []);
+
+  // 站点状态点：服务端模式下启动时拉一次体检结果（卡片小圆点用）。
+  useEffect(() => {
+    if (isServerMode()) void loadHealthResults();
   }, []);
 
   useEffect(() => {
