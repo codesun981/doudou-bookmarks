@@ -300,6 +300,33 @@ async function clearTombstones(env, url, linksRaw) {
     await env.DB.prepare('DELETE FROM url_tombstones WHERE norm = ?').bind(norm).run();
   }
 }
+// 删除书签后修剪 ui_state 里的悬空引用（桌面 bookmarkIds / bookmark-layout）。
+// 条件写：只有版本号没被人动过才写回，被并发保存抢先就跳过，绝不硬覆盖。
+async function pruneStorageRefs(env, ids) {
+  if (!ids || !ids.length) return;
+  const row = await getStorageRow(env);
+  let data;
+  try { data = JSON.parse(row.blob); } catch { return; }
+  const dead = new Set(ids.map(String));
+  let changed = false;
+  const dl = data['desktop-layout'];
+  if (dl && Array.isArray(dl.desktops)) {
+    for (const d of dl.desktops) {
+      if (Array.isArray(d.bookmarkIds)) {
+        const kept = d.bookmarkIds.filter((x) => !dead.has(String(x)));
+        if (kept.length !== d.bookmarkIds.length) { d.bookmarkIds = kept; changed = true; }
+      }
+    }
+  }
+  const bl = data['bookmark-layout'];
+  if (Array.isArray(bl)) {
+    const kept = bl.filter((e) => !dead.has(String(e?.bookmarkId)));
+    if (kept.length !== bl.length) { data['bookmark-layout'] = kept; changed = true; }
+  }
+  if (!changed) return;
+  await env.DB.prepare('UPDATE ui_state SET blob = ?, version = ?, updated_at = ? WHERE id = 1 AND version = ?')
+    .bind(JSON.stringify(data), row.version + 1, Date.now(), row.version).run();
+}
 async function ingestItems(env, items) {
   await ensureIngestSchema(env);
   const rows = await env.DB.prepare('SELECT id, url, links, catelog FROM sites').all();
@@ -411,7 +438,11 @@ async function handleApi(request, env, path) {
   if (bm && request.method === 'DELETE') {
     const cur = await env.DB.prepare('SELECT url, links FROM sites WHERE id = ?').bind(bm[1]).first();
     await env.DB.prepare('DELETE FROM sites WHERE id = ?').bind(bm[1]).run();
-    if (cur) await addTombstones(env, cur.url, cur.links);
+    if (cur) {
+      await addTombstones(env, cur.url, cur.links);
+      await env.DB.prepare('DELETE FROM health_checks WHERE site_id = ?').bind(bm[1]).run();
+      await pruneStorageRefs(env, [Number(bm[1])]);
+    }
     return json({ ok: true });
   }
   if (path === '/api/categories' && request.method === 'POST') {
@@ -496,6 +527,7 @@ async function handleApi(request, env, path) {
     const singleRows = (await env.DB.prepare('SELECT catelog FROM category_orders WHERE in_single = 1').all()).results || [];
     const singleCats = new Set(singleRows.map((r) => r.catelog));
     let deleted = 0;
+    const deletedIds = [];
     const refused = [];
     for (const id of ids) {
       const site = await env.DB.prepare('SELECT id, catelog, url, links FROM sites WHERE id = ?').bind(id).first();
@@ -509,10 +541,12 @@ async function handleApi(request, env, path) {
       const r = await env.DB.prepare('DELETE FROM sites WHERE id = ?').bind(id).run();
       if (r.meta.changes) {
         deleted++;
+        deletedIds.push(id);
         await env.DB.prepare('DELETE FROM health_checks WHERE site_id = ?').bind(id).run();
         await addTombstones(env, site.url, site.links);
       }
     }
+    if (deletedIds.length) await pruneStorageRefs(env, deletedIds);
     return json({ ok: true, deleted, refused });
   }
   // ---- 订阅到期（方案 A，2026-11-22）：与旧 sub 站共享同一 KV，只读写 'subscriptions' 键 ----
@@ -607,7 +641,13 @@ async function hcSingleCats(env) {
 async function checkSiteHealth(env, site, singleCats) {
   const prot = singleCats.has(site.catelog);
   const skip = hcSkipReason(site);
-  if (skip) return { id: site.id, status: 'skipped', detail: skip, protected: prot };
+  if (skip) {
+    // 跳过也要落记录并记时间：否则内网等跳过站点永远排在轮测队列最前，每天白占名额。
+    const now = Date.now();
+    await env.DB.prepare('INSERT INTO health_checks (site_id, status, detail, checked_at, fail_streak) VALUES (?, ?, ?, ?, 0) ON CONFLICT(site_id) DO UPDATE SET status = excluded.status, detail = excluded.detail, checked_at = excluded.checked_at, fail_streak = 0')
+      .bind(site.id, 'skipped', skip, now).run();
+    return { id: site.id, status: 'skipped', detail: skip, checked_at: now, fail_streak: 0, protected: prot };
+  }
   const r = await hcProbe(site.url);
   const prev = await env.DB.prepare('SELECT fail_streak FROM health_checks WHERE site_id = ?').bind(site.id).first();
   const streak = r.status === 'dead' ? (prev?.fail_streak || 0) + 1 : 0;
@@ -622,7 +662,7 @@ async function runDailyHealthSlice(env) {
   await ensureTables(env);
   const singleCats = await hcSingleCats(env);
   const rows = (await env.DB.prepare(
-    'SELECT s.id, s.url, s.catelog FROM sites s LEFT JOIN health_checks h ON h.site_id = s.id ORDER BY (h.checked_at IS NULL) DESC, h.checked_at ASC LIMIT 20'
+    'SELECT s.id, s.url, s.catelog FROM sites s LEFT JOIN health_checks h ON h.site_id = s.id ORDER BY (h.checked_at IS NULL) DESC, h.checked_at ASC LIMIT 16'
   ).all()).results || [];
   await Promise.all(rows.map((site) => checkSiteHealth(env, site, singleCats)));
   return rows.length;
@@ -884,12 +924,14 @@ export default {
       try { data = JSON.parse(row.blob); } catch { data = {}; }
       return json({ version: row.version, data });
     }
+    // 未命中的 /api/* 一律 404，不再回落到首页 HTML——否则接口坏了看起来像没事（2026-11-22 事故教训）。
+    if (path.startsWith('/api/')) return json({ error: 'not found' }, 404);
     if (path === '/' || path === '/newtab.html') return serveIndex(request, env);
     const asset = await env.ASSETS.fetch(request);
     if (asset.status === 404 && request.method === 'GET' && !path.includes('.')) return serveIndex(request, env);
     return asset;
   },
-  // 站点状态自动检测：每天 04:17（北京）轮测最久未测的约 20 个站点，约半月轮完一圈。
+  // 站点状态自动检测：每天 04:17（北京）轮测最久未测的 16 个站点，约 18 天轮完一圈。
   async scheduled(event, env, ctx) {
     ctx.waitUntil(runDailyHealthSlice(env).catch(() => {}));
   },

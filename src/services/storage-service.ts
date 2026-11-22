@@ -1,5 +1,6 @@
 import { createMigrationBackup } from '../utils/migration';
 import { isServerMode } from './server-mode';
+import { pushToast } from '../stores/ui-store';
 import { CORE_KEYS, STORAGE_KEYS, type RawStorage } from '../utils/storage-keys';
 
 const LOCAL_PREFIX = 'glassdesk:storage:';
@@ -67,40 +68,123 @@ function writeLocalItems(items: RawStorage): StorageChanges {
 }
 
 
-// 豆豆书签（fork）：云端 Backend——整份 RawStorage 存在 Worker 的 KV 里，
-// 本地只留内存缓存，写入防抖 250ms 后整份 PUT 回 /api/storage。
+// 豆豆书签（fork）：云端 Backend——整份 RawStorage 存 Worker 的 D1（ui_state 表，带版本号）。
+// 本地 localStorage 留一份 {version, data} 缓存：打开先用本地秒开，后台用 /api/version
+// 做小校验，版本一致就不拉全量；写入带 baseVersion 乐观锁，409 时以云端为准刷新本地。
+const SERVER_CACHE_KEY = 'glassdesk:server-cache:v1';
+interface ServerCache { version: number; data: RawStorage }
+function loadServerCache(): ServerCache | null {
+  try {
+    const raw = localStorage.getItem(SERVER_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as ServerCache;
+    if (typeof parsed.version !== 'number' || !parsed.data || typeof parsed.data !== 'object') return null;
+    return parsed;
+  } catch { return null; }
+}
+function persistServerCache(version: number, data: RawStorage): void {
+  try { localStorage.setItem(SERVER_CACHE_KEY, JSON.stringify({ version, data })); } catch { /* 存不下就算了 */ }
+}
 function createServerBackend(): Backend {
   let cache: RawStorage | null = null;
+  let version = 0;
   let putTimer: ReturnType<typeof setTimeout> | null = null;
-  async function ensure(): Promise<RawStorage> {
-    if (cache) return cache;
-    try {
-      const res = await fetch('/api/storage');
-      cache = res.ok ? ((await res.json()) as RawStorage) : {};
-    } catch {
-      cache = {};
-    }
-    return cache;
-  }
-  // KV 免费额度写入只有 1000 次/天：整份 PUT 做 10 秒节流 + 内容未变跳过，
-  // 避免高频状态变化（拖拽、计时器、同步）把写入额度烧光（2026-11-20 事故）。
   let lastSentBody = '';
   let lastSentAt = 0;
-  function schedulePut(): void {
-    if (putTimer) clearTimeout(putTimer);
-    const wait = Math.max(250, 10_000 - (Date.now() - lastSentAt));
-    putTimer = setTimeout(() => {
-      if (!cache) return;
-      const body = JSON.stringify(cache);
-      if (body === lastSentBody) return;
-      lastSentBody = body;
-      lastSentAt = Date.now();
-      void fetch('/api/storage', {
+  let dirty = false;
+
+  async function fetchServerStorage(): Promise<ServerCache | null> {
+    try {
+      const res = await fetch('/api/storage');
+      if (!res.ok) return null;
+      const body = (await res.json()) as { version: number; data: RawStorage };
+      return { version: body.version, data: body.data || {} };
+    } catch { return null; }
+  }
+  function adopt(remote: ServerCache): void {
+    const previous = cache ?? {};
+    cache = remote.data;
+    version = remote.version;
+    persistServerCache(version, cache);
+    lastSentBody = JSON.stringify(cache);
+    dirty = false;
+    const changes: StorageChanges = {};
+    for (const key of Object.keys(cache)) changes[key] = { oldValue: previous[key], newValue: cache[key] };
+    for (const key of Object.keys(previous)) {
+      if (!(key in cache)) changes[key] = { oldValue: previous[key], newValue: undefined };
+    }
+    if (Object.keys(changes).length > 0) dispatchLocalChanges(changes);
+  }
+  async function ensure(): Promise<RawStorage> {
+    if (cache) return cache;
+    const local = loadServerCache();
+    if (local) {
+      cache = local.data;
+      version = local.version;
+      lastSentBody = JSON.stringify(cache);
+      // 后台校验：版本变了才拉全量（不阻塞首屏渲染，拉到后 adopt 刷新）
+      void (async () => {
+        try {
+          const ctl = new AbortController();
+          const timer = setTimeout(() => ctl.abort(), 4000);
+          const res = await fetch('/api/version', { signal: ctl.signal });
+          clearTimeout(timer);
+          if (!res.ok) return;
+          const v = (await res.json()) as { storage?: number };
+          if (typeof v.storage === 'number' && v.storage !== version) {
+            const remote = await fetchServerStorage();
+            if (remote && remote.version !== version) adopt(remote);
+          }
+        } catch { /* 离线/超时就用本地缓存，下次打开再校验 */ }
+      })();
+      return cache;
+    }
+    const remote = await fetchServerStorage();
+    cache = remote ? remote.data : {};
+    version = remote ? remote.version : 0;
+    if (remote) persistServerCache(version, cache);
+    lastSentBody = JSON.stringify(cache);
+    return cache;
+  }
+  async function sendPut(): Promise<void> {
+    if (!cache) return;
+    const body = JSON.stringify(cache);
+    if (body === lastSentBody) { dirty = false; return; }
+    try {
+      const res = await fetch('/api/storage', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body,
-      }).catch(() => undefined);
-    }, wait);
+        body: JSON.stringify({ baseVersion: version, data: cache }),
+        keepalive: true,
+      });
+      if (res.ok) {
+        const out = (await res.json()) as { version: number };
+        version = out.version;
+        lastSentBody = body;
+        lastSentAt = Date.now();
+        dirty = false;
+        persistServerCache(version, cache);
+      } else if (res.status === 409) {
+        // 别的设备先改了：以云端为准（本端未保存的改动让位），避免整份覆盖互踩；
+        // 但不能静默——明确告诉用户这次改动没存上（2026-11-22 审计 D 项）。
+        const remote = await fetchServerStorage();
+        if (remote) {
+          forgetLocalWrites(Object.keys(remote.data));
+          adopt(remote);
+          pushToast('云端已有更新（可能来自另一台设备或另一个标签页），刚才这次改动未保存，已同步为云端版本', 'error');
+        }
+      }
+    } catch { /* 网络失败保持 dirty，下次 set 或 pagehide 再试 */ }
+  }
+  function schedulePut(): void {
+    dirty = true;
+    if (cache) persistServerCache(version, cache);
+    if (putTimer) clearTimeout(putTimer);
+    const wait = Math.max(250, 2_000 - (Date.now() - lastSentAt));
+    putTimer = setTimeout(() => { void sendPut(); }, wait);
+  }
+  if (typeof window !== 'undefined') {
+    window.addEventListener('pagehide', () => { if (dirty) void sendPut(); });
   }
   return {
     async get(keys) {
@@ -311,6 +395,12 @@ const recentWrites = new Map<string, number>();
 function markLocalWrites(keys: string[]): void {
   const now = Date.now();
   for (const key of keys) recentWrites.set(key, now);
+}
+
+/** 清掉「本页刚写过」的标记：版本冲突 adopt 云端状态时用，否则订阅方会把
+ * 云端状态误判成本页自己的写入而跳过刷新，界面停在未保存的假状态上。 */
+function forgetLocalWrites(keys: string[]): void {
+  for (const key of keys) recentWrites.delete(key);
 }
 
 export function wasRecentlyWrittenByThisTab(keys: string[], windowMs = 1500): boolean {
