@@ -413,7 +413,77 @@ async function handleApi(request, env, path) {
     await env.DB.prepare('DELETE FROM category_orders WHERE catelog = ?').bind(name).run();
     return json({ ok: true });
   }
+  // ---- 订阅到期（方案 A，2026-11-22）：与旧 sub 站共享同一 KV，只读写 'subscriptions' 键 ----
+  if (path === '/api/subs' && request.method === 'GET') {
+    return json({ ok: true, subscriptions: await readSubs(env) });
+  }
+  if (path === '/api/subs' && request.method === 'POST') {
+    const b = await readJsonBody(request);
+    const sub = sanitizeSub(b, null);
+    if (!sub) return json({ error: '名称和到期日必填' }, 400);
+    const list = await readSubs(env);
+    const now = new Date().toISOString();
+    const created = { ...sub, id: crypto.randomUUID(), createdAt: now, updatedAt: now };
+    list.push(created);
+    await writeSubs(env, list);
+    return json({ ok: true, subscription: created });
+  }
+  const subm = path.match(/^\/api\/subs\/(.+)$/);
+  if (subm && request.method === 'PUT') {
+    const id = decodeURIComponent(subm[1]);
+    const list = await readSubs(env);
+    const idx = list.findIndex((s) => String(s.id) === id);
+    if (idx < 0) return json({ error: 'not found' }, 404);
+    const b = await readJsonBody(request);
+    const merged = sanitizeSub(b, list[idx]);
+    if (!merged) return json({ error: '名称和到期日必填' }, 400);
+    list[idx] = { ...list[idx], ...merged, updatedAt: new Date().toISOString() };
+    await writeSubs(env, list);
+    return json({ ok: true, subscription: list[idx] });
+  }
+  if (subm && request.method === 'DELETE') {
+    const id = decodeURIComponent(subm[1]);
+    const list = await readSubs(env);
+    const next = list.filter((s) => String(s.id) !== id);
+    if (next.length !== list.length) await writeSubs(env, next);
+    return json({ ok: true });
+  }
   return null;
+}
+
+// ---- 订阅数据（旧 sub 站 KV 的 'subscriptions' 键；'config' 含密码/token，绝不读取） ----
+async function readSubs(env) {
+  if (!env.SUBS) return [];
+  try {
+    const raw = await env.SUBS.get('subscriptions');
+    const list = raw ? JSON.parse(raw) : [];
+    return Array.isArray(list) ? list : [];
+  } catch { return []; }
+}
+async function writeSubs(env, list) {
+  await env.SUBS.put('subscriptions', JSON.stringify(list));
+}
+const SUB_UNITS = new Set(['day', 'month', 'year']);
+function sanitizeSub(b, cur) {
+  const name = String(b.name ?? cur?.name ?? '').trim().slice(0, 80);
+  const expiryRaw = String(b.expiryDate ?? cur?.expiryDate ?? '').trim();
+  if (!name || !/^\d{4}-\d{2}-\d{2}/.test(expiryRaw)) return null;
+  const startRaw = String(b.startDate ?? cur?.startDate ?? '').trim();
+  const unitRaw = b.periodUnit ?? cur?.periodUnit;
+  const pv = Math.round(Number(b.periodValue ?? cur?.periodValue ?? 1));
+  const rd = Math.round(Number(b.reminderDays ?? cur?.reminderDays ?? 30));
+  return {
+    name,
+    customType: String(b.customType ?? cur?.customType ?? '').trim().slice(0, 20),
+    startDate: /^\d{4}-\d{2}-\d{2}/.test(startRaw) ? startRaw.slice(0, 10) : '',
+    expiryDate: expiryRaw.slice(0, 10),
+    periodValue: Number.isFinite(pv) ? Math.min(999, Math.max(1, pv)) : 1,
+    periodUnit: SUB_UNITS.has(unitRaw) ? unitRaw : 'year',
+    autoRenew: b.autoRenew == null ? Boolean(cur?.autoRenew) : Boolean(b.autoRenew),
+    reminderDays: Number.isFinite(rd) ? Math.min(365, Math.max(0, rd)) : 30,
+    notes: String(b.notes ?? cur?.notes ?? '').slice(0, 500),
+    isActive: b.isActive == null ? (cur?.isActive !== false) : Boolean(b.isActive),
+  };
 }
 
 // ---- UI 状态存储（2026-11-21 由 KV 迁 D1）+ 全局数据版本号 ----
