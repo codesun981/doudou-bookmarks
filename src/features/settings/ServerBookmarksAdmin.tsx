@@ -7,6 +7,14 @@ import { DotsSixVertical } from '@phosphor-icons/react';
 import { pushToast } from '../../stores/ui-store';
 import { TagChips, splitTagString } from '../../components/bookmark-grid/TagChips';
 import { ConfirmDialog } from '../../components/ui/Modal';
+import {
+  clientSkipReason,
+  healthStore,
+  loadHealthResults,
+  mergeHealthResults,
+  removeHealthResults,
+} from '../../services/health';
+import type { HealthRow } from '../../services/health';
 
 // 豆豆书签（fork）：云端管理三页——书签 / 分类 / 标签，分别走 Worker 的 /api（D1），
 // 改完调 reimportBookmarks 让桌面与一页按新书签树重新同步。
@@ -132,220 +140,8 @@ function LoadingShell({ error }: { error: string }) {
 
 /* ---------------- 书签页 ---------------- */
 
-// ---- 站点体检（2026-11-22）：CF 侧探活；护栏 = 内网跳过、自家站不可删、连续两次失败才可删、删前自动导出 ----
-interface HealthRow {
-  status: string;
-  detail?: string;
-  checked_at?: number;
-  fail_streak?: number;
-}
-
-function HealthCheckCard({ sites, onChanged }: { sites: SiteRow[]; onChanged: () => void }) {
-  const [results, setResults] = useState<Map<number, HealthRow>>(new Map());
-  const [protectedIds, setProtectedIds] = useState<Set<number>>(new Set());
-  const [running, setRunning] = useState(false);
-  const [progress, setProgress] = useState({ done: 0, total: 0 });
-  const [selected, setSelected] = useState<Set<number>>(new Set());
-  const [confirming, setConfirming] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-
-  const loadResults = useCallback(async () => {
-    try {
-      const res = await api('/api/healthcheck');
-      if (!res.ok) return;
-      const body = (await res.json()) as {
-        results: Array<{ site_id: number; status: string; detail?: string; checked_at?: number; fail_streak?: number }>;
-        protectedIds: number[];
-      };
-      setResults(new Map(body.results.map((r) => [r.site_id, r])));
-      setProtectedIds(new Set(body.protectedIds || []));
-    } catch { /* 体检结果读不到不阻塞页面 */ }
-  }, []);
-
-  useEffect(() => {
-    void loadResults();
-  }, [loadResults]);
-
-  async function startCheck() {
-    if (running || sites.length === 0) return;
-    setRunning(true);
-    setSelected(new Set());
-    const ids = sites.map((s) => s.id);
-    setProgress({ done: 0, total: ids.length });
-    const merged = new Map(results);
-    let done = 0;
-    try {
-      for (let i = 0; i < ids.length; i += 20) {
-        const chunk = ids.slice(i, i + 20);
-        const res = await api('/api/healthcheck', { method: 'POST', body: JSON.stringify({ ids: chunk }) });
-        if (res.ok) {
-          const body = (await res.json()) as {
-            results: Array<{ id: number; status: string; detail?: string; checked_at?: number; fail_streak?: number; protected?: boolean }>;
-          };
-          for (const r of body.results) {
-            merged.set(r.id, r);
-            if (r.protected) setProtectedIds((prev) => new Set(prev).add(r.id));
-          }
-          setResults(new Map(merged));
-        }
-        done += chunk.length;
-        setProgress({ done, total: ids.length });
-      }
-      const counts = { alive: 0, restricted: 0, dead: 0, skipped: 0 };
-      for (const s of sites) {
-        const r = merged.get(s.id);
-        if (r && r.status in counts) counts[r.status as keyof typeof counts]++;
-      }
-      pushToast(`体检完成：存活 ${counts.alive} · 受限 ${counts.restricted} · 疑似失效 ${counts.dead} · 跳过 ${counts.skipped}`, 'success');
-    } catch {
-      pushToast('体检中断，请重试', 'error');
-    } finally {
-      setRunning(false);
-    }
-  }
-
-  const deadList = sites
-    .filter((s) => results.get(s.id)?.status === 'dead')
-    .sort((a, b) => (results.get(b.id)?.fail_streak ?? 0) - (results.get(a.id)?.fail_streak ?? 0));
-  const counts = { alive: 0, restricted: 0, dead: 0, skipped: 0 };
-  let lastChecked = 0;
-  for (const s of sites) {
-    const r = results.get(s.id);
-    if (r) {
-      if (r.status in counts) counts[r.status as keyof typeof counts]++;
-      if ((r.checked_at ?? 0) > lastChecked) lastChecked = r.checked_at ?? 0;
-    }
-  }
-  const eligible = (s: SiteRow) => (results.get(s.id)?.fail_streak ?? 0) >= 2 && !protectedIds.has(s.id);
-  const selectedSites = deadList.filter((s) => selected.has(s.id) && eligible(s));
-
-  function toggle(id: number) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
-  function exportSites(list: SiteRow[]) {
-    const blob = new Blob([JSON.stringify(list, null, 2)], { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `bookmarks-backup-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(a.href);
-  }
-
-  async function doDelete() {
-    setDeleting(true);
-    try {
-      const res = await api('/api/bookmarks/batch-delete', {
-        method: 'POST',
-        body: JSON.stringify({ ids: selectedSites.map((s) => s.id) }),
-      });
-      const body = (await res.json().catch(() => ({}))) as { deleted?: number };
-      if (!res.ok) throw new Error('delete failed');
-      pushToast(`已删除 ${body.deleted ?? selectedSites.length} 条书签`, 'success');
-      setSelected(new Set());
-      setConfirming(false);
-      onChanged();
-      await loadResults();
-    } catch {
-      pushToast('删除失败，请重试', 'error');
-    } finally {
-      setDeleting(false);
-    }
-  }
-
-  return (
-    <div className="sv-card">
-      <h3>站点体检</h3>
-      <p className="sv-note" style={{ marginBottom: 10 }}>
-        从 Cloudflare 侧逐个探活：2xx/3xx 算存活，401/403/429 算「受限但活着」，连不上/超时/5xx 才算疑似失效。
-        内网与 tailnet 地址会跳过；体检在机房网络跑，需登录或校园网才通的站可能误判，所以
-        <b>连续两次体检都失败</b>的才允许删，「我的站点」里的自家站永远不可删。删之前会自动下载一份备份 JSON。
-      </p>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <button type="button" className="sv-btn" disabled={running} onClick={() => void startCheck()}>
-          {running ? `体检中… ${progress.done}/${progress.total}` : '开始体检'}
-        </button>
-        {results.size > 0 && !running ? (
-          <span className="sv-note">
-            存活 {counts.alive} · 受限 {counts.restricted} · 疑似失效 {counts.dead} · 跳过 {counts.skipped}
-            {lastChecked ? ` · 上次 ${new Date(lastChecked).toLocaleString('zh-CN', { hour12: false })}` : ''}
-          </span>
-        ) : null}
-      </div>
-      {deadList.length > 0 ? (
-        <div style={{ marginTop: 8 }}>
-          {deadList.map((s) => {
-            const r = results.get(s.id);
-            const ok = eligible(s);
-            return (
-              <div className="sv-row" key={s.id}>
-                <input type="checkbox" disabled={!ok} checked={selected.has(s.id) && ok} onChange={() => toggle(s.id)} />
-                <span className="sv-name">{s.name}</span>
-                <span className="sv-url">{s.url}</span>
-                <span className="sv-tag" style={{ color: '#ff9f0a', background: 'rgb(255 159 10 / 12%)', borderColor: 'rgb(255 159 10 / 30%)' }}>
-                  {r?.detail || '疑似失效'}
-                </span>
-                <span className="sv-note" style={{ whiteSpace: 'nowrap' }}>
-                  {protectedIds.has(s.id)
-                    ? '自家站 · 不可删'
-                    : (r?.fail_streak ?? 0) >= 2
-                      ? `连续失败 ${r?.fail_streak} 次 · 可删`
-                      : `失败 ${r?.fail_streak ?? 0} 次 · 再失败一次才可删`}
-                </span>
-                <span className="sv-note" style={{ whiteSpace: 'nowrap' }}>{s.catelog}</span>
-              </div>
-            );
-          })}
-          <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-            <button
-              type="button"
-              className="sv-btn ghost"
-              onClick={() => setSelected(new Set(deadList.filter(eligible).map((s) => s.id)))}
-            >
-              全选可删的（{deadList.filter(eligible).length}）
-            </button>
-            <button
-              type="button"
-              className="sv-btn ghost"
-              disabled={selectedSites.length === 0}
-              onClick={() => exportSites(selectedSites)}
-            >
-              导出选中备份
-            </button>
-            <button
-              type="button"
-              className="sv-btn danger"
-              disabled={selectedSites.length === 0}
-              onClick={() => {
-                exportSites(selectedSites);
-                setConfirming(true);
-              }}
-            >
-              删除选中（{selectedSites.length}）
-            </button>
-          </div>
-        </div>
-      ) : null}
-      <ConfirmDialog
-        open={confirming}
-        title="批量删除书签"
-        body={`确定删除这 ${selectedSites.length} 条疑似失效的书签吗？备份 JSON 已下载到你的电脑，删错了可以找我恢复。名单：${selectedSites.slice(0, 5).map((s) => s.name).join('、')}${selectedSites.length > 5 ? ` 等 ${selectedSites.length} 条` : ''}`}
-        confirmLabel={deleting ? '删除中…' : '确认删除'}
-        danger
-        onConfirm={() => void doDelete()}
-        onCancel={() => setConfirming(false)}
-      />
-    </div>
-  );
-}
-
 export function ServerBookmarksAdmin() {
-  const { data, error, busy, mutate, refreshAll } = useAdminData();
+  const { data, error, busy, mutate } = useAdminData();
   const [form, setForm] = useState({ name: '', url: '', desc: '', tag: '', catelog: '' });
   const [formLinks, setFormLinks] = useState<BookmarkLink[]>([]);
   const [editing, setEditing] = useState<SiteRow | null>(null);
@@ -368,7 +164,10 @@ export function ServerBookmarksAdmin() {
       <style>{CSS}</style>
       {error ? <p className="sv-error">{error}</p> : null}
 
-      <HealthCheckCard sites={data.sites} onChanged={() => void refreshAll()} />
+      <div className="sv-card">
+        <h3>站点状态</h3>
+        <p className="sv-note">站点体检已搬到单独的设置页「站点状态」：看每个站的存活情况、自动检测进度，也在那边批量删除失效站点。</p>
+      </div>
 
       <div className="sv-card">
         <h3>添加书签</h3>
@@ -810,6 +609,282 @@ export function ServerTagsAdmin() {
           setDeleteTarget(null);
           if (t) void deleteTag(t.tag);
         }}
+      />
+    </div>
+  );
+}
+
+// ---- 站点状态（2026-11-22 独立设置页）：体检结果总览 + 自动轮测 + 手动全量 + 批量删除 ----
+type StatusKey = 'alive' | 'restricted' | 'dead' | 'skipped' | 'unchecked';
+const STATUS_META: Record<StatusKey, { label: string; color: string }> = {
+  alive: { label: '存活', color: '#30d158' },
+  restricted: { label: '受限', color: '#f5a623' },
+  dead: { label: '疑似失效', color: '#ff453a' },
+  skipped: { label: '跳过', color: '#8e8e93' },
+  unchecked: { label: '未检测', color: '#636366' },
+};
+
+export function ServerStatusAdmin() {
+  const { data, error, refreshAll } = useAdminData();
+  const health = useStore(healthStore, (s) => s);
+  const [filter, setFilter] = useState<'all' | StatusKey>('all');
+  const [running, setRunning] = useState(false);
+  const [progress, setProgress] = useState({ done: 0, total: 0 });
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [confirming, setConfirming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  useEffect(() => {
+    void loadHealthResults();
+  }, []);
+
+  if (!data) return <LoadingShell error={error} />;
+  const sites = data.sites;
+  const protectedIds = health.protectedIds;
+
+  function displayOf(site: SiteRow): { key: StatusKey; row?: HealthRow } {
+    const row = health.results.get(site.id);
+    if (row) return { key: (row.status as StatusKey) || 'unchecked', row };
+    const skip = clientSkipReason(site.catelog, site.url);
+    if (skip) return { key: 'skipped', row: { status: 'skipped', detail: skip } };
+    return { key: 'unchecked' };
+  }
+
+  const counts: Record<StatusKey, number> = { alive: 0, restricted: 0, dead: 0, skipped: 0, unchecked: 0 };
+  let lastChecked = 0;
+  for (const s of sites) {
+    const d = displayOf(s);
+    counts[d.key]++;
+    if ((d.row?.checked_at ?? 0) > lastChecked) lastChecked = d.row?.checked_at ?? 0;
+  }
+  const checkedCount = sites.length - counts.unchecked - counts.skipped;
+
+  const visible = sites
+    .filter((s) => filter === 'all' || displayOf(s).key === filter)
+    .sort((a, b) => {
+      const order: StatusKey[] = ['dead', 'restricted', 'alive', 'unchecked', 'skipped'];
+      const ka = displayOf(a).key;
+      const kb = displayOf(b).key;
+      if (ka !== kb) return order.indexOf(ka) - order.indexOf(kb);
+      return (displayOf(b).row?.fail_streak ?? 0) - (displayOf(a).row?.fail_streak ?? 0);
+    });
+
+  const eligible = (s: SiteRow) => {
+    const d = displayOf(s);
+    return d.key === 'dead' && (d.row?.fail_streak ?? 0) >= 2 && !protectedIds.has(s.id);
+  };
+  const deadEligible = sites.filter(eligible);
+  const selectedSites = sites.filter((s) => selected.has(s.id) && eligible(s));
+
+  async function runFullCheck() {
+    if (running || sites.length === 0) return;
+    setRunning(true);
+    setSelected(new Set());
+    const ids = sites.map((s) => s.id);
+    setProgress({ done: 0, total: ids.length });
+    let done = 0;
+    try {
+      for (let i = 0; i < ids.length; i += 20) {
+        const chunk = ids.slice(i, i + 20);
+        const res = await api('/api/healthcheck', { method: 'POST', body: JSON.stringify({ ids: chunk }) });
+        if (res.ok) {
+          const body = (await res.json()) as { results: Array<{ id: number; status: string; detail?: string; checked_at?: number; fail_streak?: number; protected?: boolean }> };
+          mergeHealthResults(body.results);
+        }
+        done += chunk.length;
+        setProgress({ done, total: ids.length });
+      }
+      pushToast('全量检测完成', 'success');
+    } catch {
+      pushToast('检测中断，请重试', 'error');
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  async function runDailySlice() {
+    if (running) return;
+    setRunning(true);
+    try {
+      const res = await api('/api/healthcheck/run-daily', { method: 'POST', body: '{}' });
+      const body = (await res.json().catch(() => ({}))) as { checked?: number };
+      await loadHealthResults();
+      pushToast(`已检测最久未测的 ${body.checked ?? 0} 个站点`, 'success');
+    } catch {
+      pushToast('检测失败，请重试', 'error');
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  function toggle(id: number) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function exportSites(list: SiteRow[]) {
+    const blob = new Blob([JSON.stringify(list, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `bookmarks-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  async function doDelete() {
+    setDeleting(true);
+    try {
+      const res = await api('/api/bookmarks/batch-delete', {
+        method: 'POST',
+        body: JSON.stringify({ ids: selectedSites.map((s) => s.id) }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { deleted?: number; refused?: Array<{ id: number; reason: string }> };
+      if (!res.ok) throw new Error('delete failed');
+      removeHealthResults(selectedSites.map((s) => s.id));
+      pushToast(
+        `已删除 ${body.deleted ?? 0} 条${body.refused?.length ? `，${body.refused.length} 条被护栏拦下` : ''}`,
+        'success',
+      );
+      setSelected(new Set());
+      setConfirming(false);
+      await refreshAll();
+      await loadHealthResults();
+    } catch {
+      pushToast('删除失败，请重试', 'error');
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  return (
+    <div className="sv-wrap">
+      <style>{CSS}</style>
+      {error ? <p className="sv-error">{error}</p> : null}
+
+      <div className="sv-card">
+        <h3>站点状态总览</h3>
+        <p className="sv-note" style={{ marginBottom: 10 }}>
+          检测从 Cloudflare 侧发出：2xx/3xx 存活，401/403/429 是「受限」（站点活着、只是拦了机房），连不上/超时/5xx 才算疑似失效；
+          内网与 tailnet 地址跳过。书签卡片上的琥珀点 = 受限、红点 = 疑似失效，存活不标。
+          <br />
+          自动检测：每天凌晨约 4:17 轮测最久未测的约 20 个站点，约半个月轮完一圈；也可以随时手动全量测一次。
+          删除护栏：连续两次检测都失败才可删，「我的站点」里的自家站永远不可删，删前自动下载备份。
+        </p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <button type="button" className="sv-btn" disabled={running} onClick={() => void runFullCheck()}>
+            {running ? `检测中… ${progress.done}/${progress.total}` : '立即全量检测'}
+          </button>
+          <button type="button" className="sv-btn ghost" disabled={running} onClick={() => void runDailySlice()}>
+            先测最久未测的一批
+          </button>
+          <span className="sv-note">
+            已检测 {checkedCount}/{sites.length}
+            {lastChecked ? ` · 最近一次 ${new Date(lastChecked).toLocaleString('zh-CN', { hour12: false })}` : ''}
+          </span>
+        </div>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 12 }}>
+          {(['all', 'alive', 'restricted', 'dead', 'skipped', 'unchecked'] as const).map((k) => (
+            <button
+              key={k}
+              type="button"
+              className="sv-btn ghost"
+              style={filter === k ? { background: '#0a84ff', color: '#fff' } : undefined}
+              onClick={() => setFilter(k)}
+            >
+              {k === 'all' ? `全部 ${sites.length}` : `${STATUS_META[k].label} ${counts[k]}`}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="sv-card">
+        <h3>检测结果（{visible.length}）</h3>
+        {visible.length === 0 ? (
+          <p className="sv-note">这一类暂时没有站点。</p>
+        ) : (
+          visible.map((s) => {
+            const d = displayOf(s);
+            const meta = STATUS_META[d.key];
+            const ok = eligible(s);
+            return (
+              <div className="sv-row" key={s.id}>
+                {d.key === 'dead' ? (
+                  <input type="checkbox" disabled={!ok} checked={selected.has(s.id) && ok} onChange={() => toggle(s.id)} />
+                ) : null}
+                <span
+                  style={{ width: 8, height: 8, borderRadius: '50%', background: meta.color, flex: 'none' }}
+                  title={meta.label}
+                />
+                <a
+                  className="sv-name"
+                  href={s.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ color: 'inherit', textDecoration: 'none' }}
+                  title="新标签页打开，自己核实"
+                >
+                  {s.name}
+                </a>
+                <span className="sv-url">{s.url}</span>
+                <span className="sv-note" style={{ whiteSpace: 'nowrap' }}>{d.row?.detail || meta.label}</span>
+                {d.key === 'dead' ? (
+                  <span className="sv-note" style={{ whiteSpace: 'nowrap' }}>
+                    {protectedIds.has(s.id)
+                      ? '自家站 · 不可删'
+                      : (d.row?.fail_streak ?? 0) >= 2
+                        ? `连续失败 ${d.row?.fail_streak} 次 · 可删`
+                        : `失败 ${d.row?.fail_streak ?? 0} 次 · 再失败一次才可删`}
+                  </span>
+                ) : null}
+                {d.row?.checked_at ? (
+                  <span className="sv-note" style={{ whiteSpace: 'nowrap' }}>
+                    {new Date(d.row.checked_at).toLocaleDateString('zh-CN')}
+                  </span>
+                ) : null}
+                <span className="sv-note" style={{ whiteSpace: 'nowrap' }}>{s.catelog}</span>
+              </div>
+            );
+          })
+        )}
+        {deadEligible.length > 0 || selectedSites.length > 0 ? (
+          <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="sv-btn ghost"
+              onClick={() => setSelected(new Set(deadEligible.map((s) => s.id)))}
+            >
+              全选可删的（{deadEligible.length}）
+            </button>
+            <button type="button" className="sv-btn ghost" disabled={selectedSites.length === 0} onClick={() => exportSites(selectedSites)}>
+              导出选中备份
+            </button>
+            <button
+              type="button"
+              className="sv-btn danger"
+              disabled={selectedSites.length === 0}
+              onClick={() => {
+                exportSites(selectedSites);
+                setConfirming(true);
+              }}
+            >
+              删除选中（{selectedSites.length}）
+            </button>
+          </div>
+        ) : null}
+      </div>
+
+      <ConfirmDialog
+        open={confirming}
+        title="批量删除书签"
+        body={`确定删除这 ${selectedSites.length} 条疑似失效的书签吗？备份 JSON 已下载到你的电脑，删错了可以找我恢复。名单：${selectedSites.slice(0, 5).map((s) => s.name).join('、')}${selectedSites.length > 5 ? ` 等 ${selectedSites.length} 条` : ''}`}
+        confirmLabel={deleting ? '删除中…' : '确认删除'}
+        danger
+        onConfirm={() => void doDelete()}
+        onCancel={() => setConfirming(false)}
       />
     </div>
   );

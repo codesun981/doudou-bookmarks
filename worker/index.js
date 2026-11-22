@@ -425,38 +425,45 @@ async function handleApi(request, env, path) {
     const b = await readJsonBody(request);
     const ids = (Array.isArray(b.ids) ? b.ids : []).map(Number).filter(Number.isFinite).slice(0, 20);
     if (ids.length === 0) return json({ error: 'ids 必填' }, 400);
-    const singleRows = (await env.DB.prepare('SELECT catelog FROM category_orders WHERE in_single = 1').all()).results || [];
-    const singleCats = new Set(singleRows.map((r) => r.catelog));
+    const singleCats = await hcSingleCats(env);
     const out = [];
     await Promise.all(ids.map(async (id) => {
       const site = await env.DB.prepare('SELECT id, url, catelog FROM sites WHERE id = ?').bind(id).first();
       if (!site) { out.push({ id, status: 'skipped', detail: '书签不存在' }); return; }
-      const prot = singleCats.has(site.catelog);
-      const skip = hcSkipReason(site);
-      if (skip) { out.push({ id, status: 'skipped', detail: skip, protected: prot }); return; }
-      const r = await hcProbe(site.url);
-      const prev = await env.DB.prepare('SELECT fail_streak FROM health_checks WHERE site_id = ?').bind(id).first();
-      const streak = r.status === 'dead' ? (prev?.fail_streak || 0) + 1 : 0;
-      const now = Date.now();
-      await env.DB.prepare('INSERT INTO health_checks (site_id, status, detail, checked_at, fail_streak) VALUES (?, ?, ?, ?, ?) ON CONFLICT(site_id) DO UPDATE SET status = excluded.status, detail = excluded.detail, checked_at = excluded.checked_at, fail_streak = excluded.fail_streak')
-        .bind(id, r.status, r.detail, now, streak).run();
-      out.push({ id, status: r.status, detail: r.detail, checked_at: now, fail_streak: streak, protected: prot });
+      out.push(await checkSiteHealth(env, site, singleCats));
     }));
     return json({ ok: true, results: out });
   }
+  if (path === '/api/healthcheck/run-daily' && request.method === 'POST') {
+    // 与 cron 定时任务共用同一份轮测逻辑（每天测最久未测的约 20 个，约半月轮完一圈）。
+    const checked = await runDailyHealthSlice(env);
+    return json({ ok: true, checked });
+  }
   if (path === '/api/bookmarks/batch-delete' && request.method === 'POST') {
+    // 服务端护栏（与 UI 双保险）：只删「体检连续两次判死」的条目；自家站（一页分类）永不删。
     await ensureTables(env);
     const b = await readJsonBody(request);
     const ids = (Array.isArray(b.ids) ? b.ids : []).map(Number).filter(Number.isFinite).slice(0, 500);
+    const singleRows = (await env.DB.prepare('SELECT catelog FROM category_orders WHERE in_single = 1').all()).results || [];
+    const singleCats = new Set(singleRows.map((r) => r.catelog));
     let deleted = 0;
+    const refused = [];
     for (const id of ids) {
+      const site = await env.DB.prepare('SELECT id, catelog FROM sites WHERE id = ?').bind(id).first();
+      if (!site) { refused.push({ id, reason: '不存在' }); continue; }
+      if (singleCats.has(site.catelog)) { refused.push({ id, reason: '自家站不可删' }); continue; }
+      const hc = await env.DB.prepare('SELECT status, fail_streak FROM health_checks WHERE site_id = ?').bind(id).first();
+      if (!hc || hc.status !== 'dead' || (hc.fail_streak || 0) < 2) {
+        refused.push({ id, reason: '未连续两次体检失败' });
+        continue;
+      }
       const r = await env.DB.prepare('DELETE FROM sites WHERE id = ?').bind(id).run();
       if (r.meta.changes) {
         deleted++;
         await env.DB.prepare('DELETE FROM health_checks WHERE site_id = ?').bind(id).run();
       }
     }
-    return json({ ok: true, deleted });
+    return json({ ok: true, deleted, refused });
   }
   // ---- 订阅到期（方案 A，2026-11-22）：与旧 sub 站共享同一 KV，只读写 'subscriptions' 键 ----
   if (path === '/api/subs' && request.method === 'GET') {
@@ -540,6 +547,35 @@ async function hcProbe(url) {
   if (code >= 200 && code < 400) return { status: 'alive', detail: `HTTP ${code}` };
   if (code === 401 || code === 403 || code === 429) return { status: 'restricted', detail: `HTTP ${code}（站点活着，只是拦了机房访问）` };
   return { status: 'dead', detail: `HTTP ${code}` };
+}
+
+// ---- 体检共用逻辑（手动分批 / 每日轮测 / cron 三处共用） ----
+async function hcSingleCats(env) {
+  const rows = (await env.DB.prepare('SELECT catelog FROM category_orders WHERE in_single = 1').all()).results || [];
+  return new Set(rows.map((r) => r.catelog));
+}
+async function checkSiteHealth(env, site, singleCats) {
+  const prot = singleCats.has(site.catelog);
+  const skip = hcSkipReason(site);
+  if (skip) return { id: site.id, status: 'skipped', detail: skip, protected: prot };
+  const r = await hcProbe(site.url);
+  const prev = await env.DB.prepare('SELECT fail_streak FROM health_checks WHERE site_id = ?').bind(site.id).first();
+  const streak = r.status === 'dead' ? (prev?.fail_streak || 0) + 1 : 0;
+  const now = Date.now();
+  await env.DB.prepare('INSERT INTO health_checks (site_id, status, detail, checked_at, fail_streak) VALUES (?, ?, ?, ?, ?) ON CONFLICT(site_id) DO UPDATE SET status = excluded.status, detail = excluded.detail, checked_at = excluded.checked_at, fail_streak = excluded.fail_streak')
+    .bind(site.id, r.status, r.detail, now, streak).run();
+  return { id: site.id, status: r.status, detail: r.detail, checked_at: now, fail_streak: streak, protected: prot };
+}
+// 每日轮测：从未测过的优先、其次最久未测，一次 20 个（CF 免费版单次运行子请求上限 50，必须切片）。
+// 281 个站点约 14 天轮完一圈 ≈ 每站半月一测；fail_streak 跨轮累计，「连续两次失败才可删」自然成立。
+async function runDailyHealthSlice(env) {
+  await ensureTables(env);
+  const singleCats = await hcSingleCats(env);
+  const rows = (await env.DB.prepare(
+    'SELECT s.id, s.url, s.catelog FROM sites s LEFT JOIN health_checks h ON h.site_id = s.id ORDER BY (h.checked_at IS NULL) DESC, h.checked_at ASC LIMIT 20'
+  ).all()).results || [];
+  await Promise.all(rows.map((site) => checkSiteHealth(env, site, singleCats)));
+  return rows.length;
 }
 
 // ---- 订阅数据（旧 sub 站 KV 的 'subscriptions' 键；'config' 含密码/token，绝不读取） ----
@@ -787,5 +823,9 @@ export default {
     const asset = await env.ASSETS.fetch(request);
     if (asset.status === 404 && request.method === 'GET' && !path.includes('.')) return serveIndex(request, env);
     return asset;
+  },
+  // 站点状态自动检测：每天 04:17（北京）轮测最久未测的约 20 个站点，约半月轮完一圈。
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(runDailyHealthSlice(env).catch(() => {}));
   },
 };

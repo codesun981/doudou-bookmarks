@@ -1166,6 +1166,36 @@
   box-shadow: 0 2px 5px rgb(0 0 0 / 35%);
 }
 
+/* 站点状态点：只标问题（受限琥珀 / 疑似失效红），存活不标 */
+.bookmark-health {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1.5px solid rgb(18 20 26 / 88%);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 40%);
+  z-index: 2;
+  pointer-events: auto;
+}
+
+.bookmark-health--dead {
+  background: #ff453a;
+}
+
+.bookmark-health--restricted {
+  background: #f5a623;
+}
+
+.bookmark-health--inline {
+  position: static;
+  display: inline-block;
+  margin-left: 6px;
+  vertical-align: 2px;
+  flex: none;
+}
+
 .bookmark:hover .bookmark-icon {
   transform: translateY(-3px) scale(1.04);
   filter: saturate(1.05);
