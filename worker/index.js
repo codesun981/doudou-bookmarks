@@ -229,7 +229,7 @@ async function writeExtraTags(env, tags) {
 }
 async function adminData(env) {
   const [sites, cats] = await Promise.all([
-    env.DB.prepare('SELECT id, name, url, desc, tag, deploy, links, logo, catelog, sort_order, in_dock FROM sites ORDER BY catelog, sort_order ASC, id ASC').all(),
+    env.DB.prepare('SELECT id, name, url, desc, tag, deploy, links, logo, catelog, sort_order, in_dock, folder_hint FROM sites ORDER BY catelog, sort_order ASC, id ASC').all(),
     env.DB.prepare('SELECT catelog, sort_order, in_single FROM category_orders ORDER BY sort_order ASC').all(),
   ]);
   return {
@@ -240,6 +240,95 @@ async function adminData(env) {
 }
 async function readJsonBody(request) {
   try { return await request.json(); } catch { return {}; }
+}
+
+// ---- 浏览器同步插件（2026-11-22）：设备令牌鉴权，只开 ingest 端点 ----
+// 令牌明文只在用户手里；云端 meta.sync_token_hash 只存 SHA-256 哈希。
+async function syncTokenOk(request, env) {
+  const m = (request.headers.get('Authorization') || '').match(/^Bearer\s+(.+)$/i);
+  if (!m) return false;
+  await ensureTables(env);
+  const row = await env.DB.prepare("SELECT value FROM meta WHERE key = 'sync_token_hash'").first();
+  if (!row || !row.value) return false;
+  return safeEqual(await sha256Hex(m[1].trim()), row.value);
+}
+let _ingestSchemaReady = false;
+async function ensureIngestSchema(env) {
+  if (_ingestSchemaReady) return;
+  await ensureTables(env);
+  try { await env.DB.prepare("ALTER TABLE sites ADD COLUMN folder_hint TEXT DEFAULT ''").run(); } catch { /* 列已存在 */ }
+  _ingestSchemaReady = true;
+}
+const INBOX_CATEGORY = '导入箱';
+function normalizeUrlForDedupe(raw) {
+  try {
+    const u = new URL(String(raw).trim());
+    if (!/^https?:$/.test(u.protocol)) return null;
+    u.hash = '';
+    if ((u.protocol === 'http:' && u.port === '80') || (u.protocol === 'https:' && u.port === '443')) u.port = '';
+    let s = u.toString();
+    if (u.pathname === '/' && !u.search) s = s.replace(/\/$/, '');
+    return s;
+  } catch { return null; }
+}
+async function ingestItems(env, items) {
+  await ensureIngestSchema(env);
+  const rows = await env.DB.prepare('SELECT id, url, links, catelog FROM sites').all();
+  const byNorm = new Map();
+  for (const r of rows.results || []) {
+    const n = normalizeUrlForDedupe(r.url);
+    if (n && !byNorm.has(n)) byNorm.set(n, r);
+    for (const l of parseLinks(r.links)) {
+      const nl = normalizeUrlForDedupe(l.url);
+      if (nl && !byNorm.has(nl)) byNorm.set(nl, r);
+    }
+  }
+  const cat = await env.DB.prepare('SELECT catelog FROM category_orders WHERE catelog = ?').bind(INBOX_CATEGORY).first();
+  if (!cat) {
+    const max = await env.DB.prepare('SELECT COALESCE(MAX(sort_order), 0) AS m FROM category_orders').first();
+    await env.DB.prepare('INSERT INTO category_orders (catelog, sort_order, in_single) VALUES (?, ?, 0)').bind(INBOX_CATEGORY, (max?.m || 0) + 10).run();
+  }
+  let sort = (await env.DB.prepare('SELECT COALESCE(MAX(sort_order), 0) AS m FROM sites WHERE catelog = ?').bind(INBOX_CATEGORY).first())?.m || 0;
+  let added = 0, skipped = 0, updated = 0;
+  const seen = new Set();
+  for (const it of items.slice(0, 500)) {
+    const rawUrl = String(it?.url || '').trim().slice(0, 1000);
+    const norm = normalizeUrlForDedupe(rawUrl);
+    if (!norm || seen.has(norm)) { skipped++; continue; }
+    seen.add(norm);
+    const folder = String(it.folder || '').slice(0, 200);
+    const title = String(it.title || '').trim().slice(0, 120);
+    const existing = byNorm.get(norm);
+    if (existing) {
+      // 还在导入箱：补上/更新原文件夹线索；已归类的与副链接命中的一律不动
+      if (existing.catelog === INBOX_CATEGORY && folder) {
+        await env.DB.prepare('UPDATE sites SET folder_hint = ? WHERE id = ?').bind(folder, existing.id).run();
+        updated++;
+      } else skipped++;
+      continue;
+    }
+    sort += 10;
+    let host = norm;
+    try { host = new URL(norm).hostname; } catch { /* 用全串兜底 */ }
+    await env.DB.prepare('INSERT INTO sites (name, url, desc, tag, deploy, links, logo, catelog, sort_order, folder_hint) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind(title || host, rawUrl, '', '', '', '[]', null, INBOX_CATEGORY, sort, folder).run();
+    added++;
+  }
+  if (added || updated) await bumpDataVersion(env);
+  return { added, skipped, updated };
+}
+async function handleIngest(request, env, path) {
+  if (!(await syncTokenOk(request, env))) return json({ error: 'unauthorized' }, 401);
+  if (path === '/api/ingest/ping' && request.method === 'GET') return json({ ok: true });
+  if (path === '/api/ingest' && request.method === 'POST') {
+    const b = await readJsonBody(request);
+    return json({ ok: true, ...(await ingestItems(env, [b])) });
+  }
+  if (path === '/api/ingest/batch' && request.method === 'POST') {
+    const b = await readJsonBody(request);
+    return json({ ok: true, ...(await ingestItems(env, Array.isArray(b.items) ? b.items : [])) });
+  }
+  return json({ error: 'not found' }, 404);
 }
 async function handleApi(request, env, path) {
   if (path === '/api/admin/data' && request.method === 'GET') return json(await adminData(env));
@@ -486,6 +575,7 @@ export default {
         },
       });
     }
+    if (path.startsWith('/api/ingest')) return handleIngest(request, env, path);
     if (path === '/wallpaper.jpg') return serveWallpaper(env);
     if (!(await validateGate(request, env))) {
       if (path.startsWith('/api/')) return json({ error: 'unauthorized' }, 401);
